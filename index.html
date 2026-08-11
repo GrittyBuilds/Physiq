@@ -1193,7 +1193,6 @@ function viewFuel(){
   const s=dstore(); const t=dayTotals(); const log=s.log||[];
   let out=fuelSummary(t);
   out+=`<button class="btn" data-act="addfood">＋ Add food</button>`;
-  if((data.foods||[]).length){ out+=`<div class="sect-title">Favorites · tap to log</div><div class="foodchips">`+ data.foods.map(f=>`<button class="foodchip" data-act="quicklog" data-id="${f.id}">${esc(f.name)}</button>`).join('') + `</div>`; }
   // meal-grouped food log
   const buckets={}; MEALS.forEach(m=>buckets[m.id]=[]);
   log.forEach((e,i)=>{ const mid=buckets[e.meal]?e.meal:'snacks'; buckets[mid].push({e,i}); });
