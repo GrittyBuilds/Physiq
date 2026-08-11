@@ -187,6 +187,38 @@
   .meal .info .det{font-size:11px;color:var(--mut);margin-top:3px;opacity:.85}
   .meal .kc{font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums;flex:none;text-align:right}
   .meal .kc b{display:block;color:var(--txt);font-size:15px}
+  /* Fuel — MacroFactor-style energy summary */
+  .fuelcard{padding:16px 16px 15px}
+  .fuel-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .fuel-k{font-size:11px;letter-spacing:1.6px;text-transform:uppercase;color:var(--steel);font-weight:700}
+  .fuel-seg{display:flex;gap:4px;background:var(--card2);border:1px solid var(--line);border-radius:9px;padding:3px}
+  .fuel-seg button{background:none;border:none;color:var(--mut);font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:7px;cursor:pointer}
+  .fuel-seg button.on{background:var(--ember-soft);color:var(--ember);box-shadow:inset 0 0 0 1px var(--ember-line)}
+  .fuel-big{display:flex;align-items:baseline;gap:9px;margin:2px 0 11px}
+  .fuel-big b{font-family:var(--font-display);font-size:40px;font-weight:800;line-height:1;color:var(--txt);font-variant-numeric:tabular-nums}
+  .fuel-big span{font-size:13px;color:var(--mut);font-weight:600}
+  .fuel-big.over b{color:var(--red)}
+  .fbar{height:8px;background:var(--card2);border-radius:99px;overflow:hidden}
+  .fbar i{display:block;height:100%;border-radius:99px;transition:width .45s ease}
+  .fbar.cal i{background:linear-gradient(90deg,#5CEEDA,#12B9A0)}
+  .fbar.cal i.over{background:linear-gradient(90deg,#D85A57,#b53f3c)}
+  .fuel-meta{font-size:11.5px;color:var(--mut);margin-top:7px;font-variant-numeric:tabular-nums}
+  .fmacros{display:flex;flex-direction:column;gap:12px;margin-top:15px;padding-top:14px;border-top:1px solid var(--line)}
+  .fmrow-t{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+  .fm-nm{font-size:12.5px;font-weight:700}
+  .fm-v{font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums}
+  .fm-v b{color:var(--txt);font-weight:700}
+  .fm-sub{font-size:11px;color:var(--mut);margin-top:5px;text-align:right;font-variant-numeric:tabular-nums}
+  /* Fuel — meal-grouped log */
+  .mealsec{margin-bottom:16px}
+  .meal-h{display:flex;align-items:center;justify-content:space-between;margin:0 2px 9px}
+  .meal-nm{font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .meal-ct{font-size:11px;font-weight:700;color:var(--mut);background:var(--card2);border:1px solid var(--line);border-radius:99px;min-width:19px;height:19px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px}
+  .meal-r{display:flex;align-items:center;gap:11px}
+  .meal-sub{font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums}
+  .meal-add{width:29px;height:29px;border-radius:9px;border:1px solid var(--ember-line);background:var(--ember-soft);color:var(--ember);font-size:17px;font-weight:700;line-height:1;flex:none;cursor:pointer}
+  .meal-empty{font-size:12px;color:var(--slate);padding:2px 2px 4px;opacity:.7}
+  .mealseg{display:flex;gap:0}
   /* Toggle & buttons */
   .togrow{display:flex;align-items:center;gap:12px;padding:6px 2px}
   .togrow .t-nm{font-size:14px}
@@ -827,7 +859,7 @@ function persistLocal(){ try{ localStorage.setItem(KEY, JSON.stringify(data)); }
 function touch(k){ k=k||curKey(); const s=dstore(k); s._u=nowMs(); }
 function touchSettings(){ data.updatedAt=nowMs(); }
 /* ---------------- STATE ---------------- */
-const state = { tab:'today', liftDay: 0, statsView:'week', day: todayKey() };
+const state = { tab:'today', liftDay: 0, statsView:'week', day: todayKey(), fuelEnergy:'remaining', fuelMeal:null, sheetMeal:'snacks' };
 /* Currently-viewed day (defaults to today). Day-scoped views/edits operate on this. */
 function curKey(){ return state.day||todayKey(); }
 function isToday(){ return curKey()===todayKey(); }
@@ -1054,26 +1086,63 @@ function setSwap(orig,newName){ const s=dstore(); s.swaps=s.swaps||{};
   else { s.swaps[orig]=clean; moveSets(s, prevKey, clean); }
   touch(); save(); closeSheet(); render();
 }
+/* Meals for the food log. defaultMeal picks by time of day when adding. */
+const MEALS=[{id:'breakfast',name:'Breakfast'},{id:'lunch',name:'Lunch'},{id:'dinner',name:'Dinner'},{id:'snacks',name:'Snacks'}];
+function mealName(id){ const m=MEALS.find(x=>x.id===id); return m?m.name:'Snacks'; }
+function defaultMeal(){ const h=new Date().getHours(); if(h<11) return 'breakfast'; if(h<15) return 'lunch'; if(h<21) return 'dinner'; return 'snacks'; }
+function mealSeg(sel){ return `<div class="seg mealseg" style="margin-bottom:11px">`+MEALS.map(m=>`<button class="${m.id===sel?'on':''}" data-act="pickmeal" data-m="${m.id}">${m.name}</button>`).join('')+`</div>`; }
+/* MacroFactor-style energy + macro-bar summary with a Remaining/Eaten toggle. */
+function fuelSummary(t){
+  const mode=state.fuelEnergy||'remaining';
+  const remain=TARGET.kc-t.kc;
+  const big=mode==='remaining'?Math.abs(remain):t.kc;
+  const lab=mode==='remaining'?(remain>=0?'kcal remaining':'kcal over'):'kcal eaten';
+  const calPct=Math.min(100,TARGET.kc?Math.round(t.kc/TARGET.kc*100):0); const calOver=t.kc>TARGET.kc;
+  const seg=`<div class="fuel-seg"><button class="${mode==='remaining'?'on':''}" data-act="fuelmode" data-m="remaining">Remaining</button><button class="${mode==='eaten'?'on':''}" data-act="fuelmode" data-m="eaten">Eaten</button></div>`;
+  const macroRow=(name,cur,goal,color)=>{ const left=goal-cur, pct=Math.min(100,goal?Math.round(cur/goal*100):0), over=cur>goal;
+    return `<div class="fmrow"><div class="fmrow-t"><span class="fm-nm" style="color:${color}">${name}</span><span class="fm-v"><b>${cur}</b> / ${goal}g</span></div>
+      <div class="fbar"><i style="width:${pct}%;background:${color}"></i></div>
+      <div class="fm-sub">${left>=0?left+'g left':'<span style=\"color:var(--red)\">'+Math.abs(left)+'g over</span>'}</div></div>`; };
+  return `<div class="card fuelcard">
+    <div class="fuel-top"><span class="fuel-k">Energy</span>${seg}</div>
+    <div class="fuel-big ${mode==='remaining'&&remain<0?'over':''}"><b>${big.toLocaleString()}</b><span>${lab}</span></div>
+    <div class="fbar cal"><i class="${calOver?'over':''}" style="width:${calPct}%"></i></div>
+    <div class="fuel-meta">${t.kc.toLocaleString()} eaten · ${TARGET.kc.toLocaleString()} target</div>
+    <div class="fmacros">
+      ${macroRow('Protein',t.p,TARGET.p,MC.p)}
+      ${macroRow('Carbs',t.c,TARGET.c,MC.c)}
+      ${macroRow('Fat',t.f,TARGET.f,MC.f)}
+    </div></div>`;
+}
 function viewFuel(){
   const s=dstore(); const t=dayTotals(); const log=s.log||[];
-  const dw=isToday()?"Today's":relDayLabel(curKey())+"’s";
-  let out=`<div class="card"><h2>${dw} Macros</h2>${macroBlock(t)}</div>`;
+  let out=fuelSummary(t);
   out+=`<button class="btn" data-act="addfood">＋ Add food</button>`;
-  if((data.foods||[]).length){ out+=`<div class="sect-title">Quick Add · tap to log</div><div class="foodchips">`+ data.foods.map(f=>`<button class="foodchip" data-act="quicklog" data-id="${f.id}">${esc(f.name)}</button>`).join('') + `</div>`; }
-  out+=`<div class="sect-title">${dw} Food</div>`;
-  if(!log.length) out+=`<div class="card"><div class="empty">Nothing logged yet. Tap “Add food” to log what you actually ate — your own foods, any portion.</div></div>`;
-  else log.forEach((e,i)=>{ const kc=(+e.p||0)*4+(+e.c||0)*4+(+e.f||0)*9;
-    out+=`<div class="meal"><div class="info"><div class="nm">${esc(e.name)}</div><div class="mac">${e.p}P · ${e.c}C · ${e.f}F</div>${e.det?`<div class="det">${esc(e.det)}</div>`:''}</div>
-      <div class="kc"><b>${kc}</b>kcal</div>
-      <div class="chk" style="border-color:var(--blue);color:var(--blue)" data-act="editlog" data-i="${i}" aria-label="Edit">✎</div>
-      <div class="chk" style="border-color:var(--red);color:var(--red)" data-act="dellog" data-i="${i}" aria-label="Delete">✕</div></div>`; });
+  if((data.foods||[]).length){ out+=`<div class="sect-title">Favorites · tap to log</div><div class="foodchips">`+ data.foods.map(f=>`<button class="foodchip" data-act="quicklog" data-id="${f.id}">${esc(f.name)}</button>`).join('') + `</div>`; }
+  // meal-grouped food log
+  const buckets={}; MEALS.forEach(m=>buckets[m.id]=[]);
+  log.forEach((e,i)=>{ const mid=buckets[e.meal]?e.meal:'snacks'; buckets[mid].push({e,i}); });
+  MEALS.forEach(m=>{ const items=buckets[m.id];
+    const sub=items.reduce((a,x)=>a+((+x.e.p||0)*4+(+x.e.c||0)*4+(+x.e.f||0)*9),0);
+    out+=`<div class="mealsec"><div class="meal-h"><div class="meal-nm">${m.name}${items.length?` <span class="meal-ct">${items.length}</span>`:''}</div>
+      <div class="meal-r"><span class="meal-sub">${items.length?sub.toLocaleString()+' kcal':''}</span><button class="meal-add" data-act="addmeal" data-m="${m.id}" aria-label="Add to ${m.name}">＋</button></div></div>`;
+    if(!items.length) out+=`<div class="meal-empty">Nothing logged</div>`;
+    else items.forEach(({e,i})=>{ const kc=(+e.p||0)*4+(+e.c||0)*4+(+e.f||0)*9;
+      out+=`<div class="meal"><div class="info"><div class="nm">${esc(e.name)}</div><div class="mac">${e.p}P · ${e.c}C · ${e.f}F${e.det?` · ${esc(e.det)}`:''}</div></div>
+        <div class="kc"><b>${kc}</b>kcal</div>
+        <div class="chk" style="border-color:var(--blue);color:var(--blue)" data-act="editlog" data-i="${i}" aria-label="Edit">✎</div>
+        <div class="chk" style="border-color:var(--red);color:var(--red)" data-act="dellog" data-i="${i}" aria-label="Delete">✕</div></div>`; });
+    out+=`</div>`;
+  });
   return out;
 }
 function fmtAmt(n){ return (Math.round(n*100)/100).toString(); }
 function foodSheet(){
   const foods=(data.foods||[]);
+  state.sheetMeal=state.fuelMeal||defaultMeal();
   const chips=foods.map(f=>`<button class="foodchip" data-act="pickfood" data-id="${f.id}">${esc(f.name)} <i data-act="delfood" data-id="${f.id}">✕</i></button>`).join('');
   openSheet(`<h3>Add Food</h3>
+    ${mealSeg(state.sheetMeal)}
     <input class="field" id="fdname" placeholder="Food name" autocomplete="off" list="foodlist" style="margin-bottom:9px">
     <datalist id="foodlist">${foods.map(f=>`<option value="${esc(f.name)}"></option>`).join('')}</datalist>
     <input class="field" id="fdserv" placeholder="Serving size on label (e.g. 100 g, 1 scoop)" autocomplete="off" style="margin-bottom:9px">
@@ -1098,8 +1167,10 @@ function updateFdCalc(){ const el=document.getElementById('fdcalc'); if(!el) ret
 }
 /* Quick-add a saved food: pick the amount and it scales the label macros. */
 function qtySheet(id){ const f=(data.foods||[]).find(x=>x.id===id); if(!f) return;
+  state.sheetMeal=state.fuelMeal||defaultMeal();
   openSheet(`<h3>${esc(f.name)}</h3>
     <div style="font-size:12px;color:var(--mut);text-align:center;margin-bottom:12px">${f.p}P · ${f.c}C · ${f.f}F ${f.serv?`per <b style="color:var(--txt)">${esc(f.serv)}</b>`:'per serving'} · ${Math.round((+f.p||0)*4+(+f.c||0)*4+(+f.f||0)*9)} kcal</div>
+    ${mealSeg(state.sheetMeal)}
     <div class="inline" style="margin-bottom:11px;justify-content:center">
       <input class="field" id="qtyamt" inputmode="decimal" value="1" data-in="qtycalc" data-fid="${f.id}" style="max-width:130px;text-align:center">
       <span style="font-size:13px;color:var(--mut);white-space:nowrap">× ${f.serv?esc(f.serv):'serving'}</span></div>
@@ -1114,7 +1185,9 @@ function updateQtyCalc(id){ const f=(data.foods||[]).find(x=>x.id===id); const e
 }
 /* Edit an already-logged entry in place. */
 function editLogSheet(i){ const s=dstore(); const e=(s.log||[])[i]; if(!e) return;
+  state.sheetMeal=(e.meal&&MEALS.some(m=>m.id===e.meal))?e.meal:'snacks';
   openSheet(`<h3>Edit Food</h3>
+    ${mealSeg(state.sheetMeal)}
     <input class="field" id="edname" placeholder="Food name" autocomplete="off" value="${esc(e.name||'')}" style="margin-bottom:9px">
     <div style="font-size:11.5px;color:var(--mut);margin:0 2px 7px">The total macros for this entry.</div>
     <div class="row2" style="margin-bottom:11px">
@@ -1538,24 +1611,27 @@ document.addEventListener('click', e=>{
   else if(a==='rest+15'){ addRest(15); }
   else if(a==='restskip'){ skipRest(); }
   else if(a==='cardio'){ const s=dstore(); s.cardio=!s.cardio; touch(); save(); el.classList.toggle('on'); }
-  else if(a==='addfood'){ foodSheet(); }
+  else if(a==='addfood'){ state.fuelMeal=null; foodSheet(); }
   else if(a==='quicklog'){ qtySheet(el.dataset.id); }
+  else if(a==='addmeal'){ state.fuelMeal=el.dataset.m; foodSheet(); }
+  else if(a==='pickmeal'){ state.sheetMeal=el.dataset.m; document.querySelectorAll('.mealseg button').forEach(b=>b.classList.toggle('on', b.dataset.m===state.sheetMeal)); }
+  else if(a==='fuelmode'){ state.fuelEnergy=el.dataset.m; render(); }
   else if(a==='pickfood'){ const f=(data.foods||[]).find(x=>x.id===el.dataset.id); if(f){ setVal('fdname',f.name); setVal('fdserv',f.serv||''); setVal('fdp',f.p); setVal('fdc',f.c); setVal('fdf',f.f); updateFdCalc(); } }
   else if(a==='delfood'){ data.foods=(data.foods||[]).filter(x=>x.id!==el.dataset.id); touchSettings(); save(); foodSheet(); }
   else if(a==='logfood'){ const name=val('fdname').trim(); const serv=val('fdserv').trim(); const p=+val('fdp')||0,c=+val('fdc')||0,f=+val('fdf')||0; const av=parseFloat(val('fdamt')); const amt=(isNaN(av)||av<=0)?1:av; if(!name&&!p&&!c&&!f) return;
-    const s=dstore(); const entry={name:name||'Food',p:Math.round(p*amt),c:Math.round(c*amt),f:Math.round(f*amt)};
+    const s=dstore(); const entry={name:name||'Food',p:Math.round(p*amt),c:Math.round(c*amt),f:Math.round(f*amt),meal:state.sheetMeal||'snacks'};
     if(serv||amt!==1) entry.det=fmtAmt(amt)+' × '+(serv||('serving'+(amt===1?'':'s')));
     (s.log=s.log||[]).push(entry);
     const chk=document.getElementById('fdsave'); if(name&&chk&&chk.checked){ const ex=(data.foods||[]).find(x=>(x.name||'').toLowerCase()===name.toLowerCase());
       if(ex){ ex.p=p; ex.c=c; ex.f=f; ex.serv=serv; } else (data.foods=data.foods||[]).push({id:'f'+nowMs().toString(36)+Math.floor(Math.random()*10000),name,p,c,f,serv}); touchSettings(); }
-    touch(); save(); closeSheet(); render(); }
+    state.fuelMeal=null; touch(); save(); closeSheet(); render(); }
   else if(a==='logqty'){ const f=(data.foods||[]).find(x=>x.id===el.dataset.id); if(!f) return; const av=parseFloat(val('qtyamt')); const amt=(isNaN(av)||av<=0)?1:av;
-    const s=dstore(); const entry={name:f.name,p:Math.round((+f.p||0)*amt),c:Math.round((+f.c||0)*amt),f:Math.round((+f.f||0)*amt)};
+    const s=dstore(); const entry={name:f.name,p:Math.round((+f.p||0)*amt),c:Math.round((+f.c||0)*amt),f:Math.round((+f.f||0)*amt),meal:state.sheetMeal||'snacks'};
     if(f.serv||amt!==1) entry.det=fmtAmt(amt)+' × '+(f.serv||('serving'+(amt===1?'':'s')));
-    (s.log=s.log||[]).push(entry); touch(); save(); closeSheet(); render(); showToast('Logged '+f.name); }
+    (s.log=s.log||[]).push(entry); state.fuelMeal=null; touch(); save(); closeSheet(); render(); showToast('Logged '+f.name+' · '+mealName(entry.meal)); }
   else if(a==='editlog'){ editLogSheet(+el.dataset.i); }
   else if(a==='savelog'){ const i=+el.dataset.i; const s=dstore(); const e=(s.log||[])[i]; if(!e) return;
-    e.name=val('edname').trim()||'Food'; e.p=Math.round(+val('edp')||0); e.c=Math.round(+val('edc')||0); e.f=Math.round(+val('edf')||0); delete e.det;
+    e.name=val('edname').trim()||'Food'; e.p=Math.round(+val('edp')||0); e.c=Math.round(+val('edc')||0); e.f=Math.round(+val('edf')||0); e.meal=state.sheetMeal||e.meal||'snacks'; delete e.det;
     touch(); save(); closeSheet(); render(); }
   else if(a==='dellogsheet'){ const i=+el.dataset.i; const s=dstore(); (s.log||[]).splice(i,1); touch(); save(); closeSheet(); render(); }
   else if(a==='dellog'){ const s=dstore(); (s.log||[]).splice(+el.dataset.i,1); touch(); save(); render(); }
