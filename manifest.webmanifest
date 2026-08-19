@@ -1,0 +1,19 @@
+{
+  "name": "Physiq",
+  "short_name": "Physiq",
+  "description": "Track, train, transform — a training and nutrition tracker that works offline.",
+  "id": "/physiq/",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#08090B",
+  "theme_color": "#08090B",
+  "categories": ["health", "fitness", "lifestyle"],
+  "icons": [
+    { "src": "brand/png/web/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "brand/png/web/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "brand/png/android/ic_launcher-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
