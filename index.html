@@ -154,8 +154,9 @@
   }
   @media (prefers-reduced-motion:reduce){
     :root{--d-1:1ms;--d-2:1ms;--d-3:1ms;--d-4:1ms;--d-5:1ms}
-    *,*::before,*::after{animation-duration:1ms!important;animation-iteration-count:1!important;
-      transition-duration:1ms!important;scroll-behavior:auto!important}
+    *,*::before,*::after{animation-duration:1ms!important;animation-delay:0ms!important;
+      animation-iteration-count:1!important;
+      transition-duration:1ms!important;transition-delay:0ms!important;scroll-behavior:auto!important}
   }
 
 
@@ -427,8 +428,10 @@
   .bar > i{display:block;height:100%;border-radius:var(--r-full);
     transition:width var(--d-5) var(--ease-out)}
   .macros{flex:1;min-width:0;display:flex;flex-direction:column;gap:var(--sp-3)}
-  .mrow .top-line{display:flex;justify-content:space-between;align-items:baseline;
+  .mrow .top-line{display:flex;justify-content:space-between;align-items:baseline;gap:var(--sp-2);
     font-size:var(--fs-xs);margin-bottom:6px}
+  .mrow .top-line b{white-space:nowrap}
+  .mrow .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .mrow .top-line b{font-family:var(--f-num);font-variant-numeric:tabular-nums;color:var(--t1)}
   .mrow .name{color:var(--t3);display:inline-flex;align-items:center;gap:6px;font-weight:600}
   .mrow .name::before{content:"";width:7px;height:7px;border-radius:2px;background:currentColor;flex:none}
@@ -814,7 +817,8 @@
   .menurow .ic{width:19px;height:19px;color:var(--t3);flex:none}
   .menurow .mr-t{flex:1;min-width:0}
   .menurow .mr-t small{display:block;font-size:var(--fs-xs);color:var(--t3);margin-top:2px}
-  .menurow .chev{width:16px;height:16px;color:var(--t4);flex:none}
+  .menurow .chev{display:flex;color:var(--t4);flex:none}
+  .menurow .chev .ic{width:16px;height:16px}
   .menurow .badge{font-size:var(--fs-cap);font-weight:700;color:var(--good);background:var(--good-soft);
     border-radius:var(--r-full);padding:3px 9px;flex:none}
   .menurow.danger{color:var(--bad)}
@@ -951,8 +955,15 @@
      =================================================================== */
   @media (forced-colors:active){
     .card,.ex,.tile,.meal,.field,.chip,.seg,.menulist,.foodrow,.pr{border:1px solid CanvasText}
-    .bar > i,.fbar i,.dot.s,.dot.m,.dot.c{forced-color-adjust:none;background:Highlight}
+    .bar > i,.fbar i{forced-color-adjust:none;background:Highlight}
+    .bar,.fbar{border:1px solid CanvasText}
+    /* Opting out is the whole point — don't then repaint all three states the
+       same colour, or lift, macros and cardio become indistinguishable. */
+    .dot{forced-color-adjust:none;border:1px solid CanvasText}
     .chk.on,.switch.on{forced-color-adjust:none;background:Highlight;border-color:Highlight}
+    /* Selected states signal through background and shadow, both of which
+       forced colours strip. Give them an outline instead. */
+    .seg button.on,.chip.on,.foodchip.on{outline:2px solid Highlight;outline-offset:-2px}
     nav button.on{outline:2px solid Highlight;outline-offset:-3px}
     nav::after{display:none}
     .top,nav,.sheet,.toast,.rest-bar,.sheet-bg{-webkit-backdrop-filter:none;backdrop-filter:none;background:Canvas}
@@ -1071,7 +1082,10 @@
   body.vm-desktop .viewwrap.vw-fuel > .mealgrid > .mealsec{margin-bottom:var(--sp-4)}
   @media (max-width:1180px){
     body.vm-desktop .viewwrap.vw-fuel{grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
-    body.vm-desktop .viewwrap.vw-fuel > *{grid-column:1 / -1;grid-row:auto}
+    /* Each child is named so this outranks the two-column rules above it. */
+    body.vm-desktop .viewwrap.vw-fuel > .fuelcard,
+    body.vm-desktop .viewwrap.vw-fuel > .btn,
+    body.vm-desktop .viewwrap.vw-fuel > .mealgrid{grid-column:1 / -1;grid-row:auto}
     body.vm-desktop .viewwrap.vw-fuel > .fuelcard{position:static}
     body.vm-desktop .viewwrap.vw-fuel > .btn{width:auto;justify-self:start;min-width:220px}
   }
@@ -1088,7 +1102,7 @@
   body.vm-desktop .viewwrap > .tiles,
   body.vm-desktop .viewwrap > .hint,
   body.vm-desktop .viewwrap > .prose{grid-column:1 / -1}
-  body.vm-desktop .tiles{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:var(--sp-3)}
+  body.vm-desktop .viewwrap > .tiles{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:var(--sp-3)}
   /* Keep measure and control size sane on a wide canvas */
   body.vm-desktop .setprog,body.vm-desktop .restsel,body.vm-desktop .lift-legend{max-width:760px}
   body.vm-desktop .hactions .iconbtn{display:none}
@@ -1138,6 +1152,8 @@
     font-family:var(--f-num);font-variant-numeric:tabular-nums}
   .calcline b{color:var(--t1)}
   .errline{font-size:var(--fs-xs);color:var(--bad);text-align:center;margin-top:var(--sp-2);min-height:16px}
+  .statusline{font-size:var(--fs-xs);color:var(--t3);text-align:center;margin-top:var(--sp-2);min-height:16px}
+  .statusline.bad{color:var(--bad)}
   .prose{font-size:var(--fs-sm);color:var(--t2);line-height:var(--lh-base);max-width:62ch}
   .stack{display:flex;flex-direction:column;gap:var(--sp-2)}
   .between{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3)}
@@ -1813,12 +1829,13 @@ function lastSets(exName){
 /* ---------------- VIEWS ---------------- */
 const TAB_ORDER=['today','lift','fuel','body','stats','program'];
 const TAB_TITLES={today:'Today',lift:'Workout',fuel:'Fuel',body:'Body',stats:'Progress',program:'Program'};
-let _renderedTab=null;
+let _renderedTab=null, _renderedDay=null;
 const _scrollMem={};
 function render(){
   applyPhase();
   const v=document.getElementById('view');
   const moved=_renderedTab!==state.tab;
+  const dayChanged=_renderedDay!==null && _renderedDay!==curKey();
   /* Stay exactly where the user was on an in-place update, and remember the
      tab we are leaving so coming back lands in the same place. */
   _scrollMem[_renderedTab||state.tab]=v.scrollTop;
@@ -1845,9 +1862,10 @@ function render(){
     v.classList.remove('fade','from-left','from-right'); void v.offsetWidth;
     v.classList.add('fade', back?'from-left':'from-right');
   }
+  if(dayChanged) _scrollMem[state.tab]=0;
   v.scrollTop=_scrollMem[state.tab]||0;
   animateProgress(v);
-  _renderedTab=state.tab;
+  _renderedTab=state.tab; _renderedDay=curKey();
 }
 function renderDayBar(show){
   const bar=document.getElementById('daybar'); if(!bar) return;
@@ -1959,7 +1977,7 @@ function viewLift(){
   done=Math.min(done,planned);
 
   let out=`<div class="chips">${chips}</div>`;
-  out+=`<div class="setprog"><div class="row"><span class="nm">${esc(d.name)}${state.liftDay===rp?' · up next':''}</span>
+  out+=`<div class="setprog"><div class="row"><span class="nm">Day ${state.liftDay+1} · ${esc(d.name)}${d.priority?' · priority':''}${state.liftDay===rp?' · up next':''}</span>
       <span class="ct"><b>${done}</b>/${planned} sets</span></div>
     <div class="bar"><i data-fill="${pctOf(done,planned)}%" style="width:${pctOf(done,planned)}%;background:var(--good)"></i></div></div>`;
   const rd=data.restDefault||120; const RO=[[60,'60s'],[90,'90s'],[120,'2m'],[180,'3m']];
@@ -2322,6 +2340,8 @@ function chartSVG(pts,trend,opts){
   const all=pts.map(p=>p.v).concat(trend.map(p=>p.v)).concat(opts.target?[opts.target]:[]);
   let min=Math.min(...all), max=Math.max(...all);
   if(min===max){ min-=1; max+=1; }
+  /* Label the real extremes; pad only the drawing range so marks clear the edge. */
+  const hi=max, lo=min;
   const pad=(max-min)*0.14; min-=pad; max+=pad;
   const x=i=>padL+(i/(pts.length-1))*(W-padL-padR);
   const y=v=>H-padB-((v-min)/(max-min))*(H-padT-padB);
@@ -2349,7 +2369,8 @@ function chartSVG(pts,trend,opts){
     <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="4" fill="${color}" stroke="var(--s1)" stroke-width="2"/>
     <text class="axis" x="${padL}" y="${H-6}">${fmtd(pts[0].k)}</text>
     <text class="axis" x="${W-padR}" y="${H-6}" text-anchor="end">${fmtd(pts[pts.length-1].k)}</text>
-    <text class="axis" x="${padL}" y="${(padT-6).toFixed(1)}">${max.toFixed(dec)}</text>
+    <text class="axis" x="${padL}" y="${(padT-6).toFixed(1)}">${hi.toFixed(dec)}</text>
+    <text class="axis" x="${W-padR}" y="${(padT-6).toFixed(1)}" text-anchor="end">${lo.toFixed(dec)}</text>
     <g class="crosshair" style="display:none"><line class="chx" y1="${padT}" y2="${H-padB}" stroke="var(--line-2)"/>
       <circle class="chd" r="4" fill="${color}" stroke="var(--s1)" stroke-width="2"/>
       <text class="axis chl" text-anchor="middle" y="${padT-6}" style="fill:var(--t1);font-size:11px"></text></g>
@@ -2556,7 +2577,7 @@ function viewWeek(){
    decrement, so it stays accurate when the phone screen locks or the tab is
    backgrounded and JS timers are throttled/paused. On return we resync from the
    clock, so the timer has effectively kept progressing while away. */
-let restRaf=0, restRemain=0, restInit=120, restEnd=0, restActive=false, _restSec=-1;
+let restRaf=0, restHide=0, restRemain=0, restInit=120, restEnd=0, restActive=false, _restSec=-1;
 function startRest(sec){ stopRestInt(); restInit=sec; restRemain=sec; restEnd=nowMs()+sec*1000;
   restActive=true; _restSec=-1; showRest(); restLoop(); }
 /* One rAF loop, anchored to a wall-clock end time. It self-throttles when the
@@ -2576,12 +2597,14 @@ function restLoop(){
   if(left<=0){ restDone(); return; }
   restRaf=requestAnimationFrame(restLoop);
 }
-function stopRestInt(){ if(restRaf){ cancelAnimationFrame(restRaf); restRaf=0; } }
+function stopRestInt(){ if(restRaf){ cancelAnimationFrame(restRaf); restRaf=0; }
+  if(restHide){ clearTimeout(restHide); restHide=0; } }
 function paintRest(){ const t=document.getElementById('resttime');
   if(t) t.textContent=mmss(Math.max(0,restRemain));
   const pEl=document.getElementById('restprog');
   if(pEl) pEl.style.transform='scaleX('+(restInit?Math.max(0,restRemain)/restInit:0).toFixed(4)+')'; }
 function showRest(){ const el=document.getElementById('restbar'); el.classList.remove('done');
+  el.setAttribute('aria-live','off');
   document.getElementById('restlab').textContent='Rest'; el.classList.add('on'); }
 function hideRest(){ restActive=false; stopRestInt();
   const b=document.getElementById('restbar'); b.classList.remove('on'); b.classList.remove('done'); }
@@ -2598,7 +2621,9 @@ function restDone(){ restActive=false; stopRestInt(); restRemain=0;
   beep(); haptic('alarm');
   const bar=document.getElementById('restbar'); bar.classList.add('done'); bar.setAttribute('aria-live','polite');
   document.getElementById('resttime').textContent='0:00'; document.getElementById('restlab').textContent='Go';
-  setTimeout(hideRest,1600); }
+  /* Held so a rest started inside this window cancels it instead of being
+     torn down by it. showRest() puts aria-live back to off. */
+  restHide=setTimeout(hideRest,1600); }
 function mmss(s){ return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
 
 /* ---------------- UNIT ---------------- */
@@ -2621,7 +2646,10 @@ function openSheet(html){
   document.body.classList.add('sheet-open');
   /* inert gives focus-trapping, AT-hiding and pointer-blocking in one go.
      The lock is deliberately excluded — a confirmation can be raised over it. */
-  document.querySelectorAll('#app > *:not(.sheet):not(.sheet-bg):not(.lock)').forEach(n=>{ n.inert=true; });
+  document.querySelectorAll('#app > *:not(.sheet):not(.sheet-bg):not(.lock):not(#toast)').forEach(n=>{ n.inert=true; });
+  /* A modal owns the screen: retire any pending Undo rather than leaving a
+     live control floating outside the dialog. */
+  if(_undoFn){ _undoFn=null; document.getElementById('toast').classList.remove('on'); }
   /* Focus the dialog itself. Focusing the first control would raise the
      keyboard on touch and paint a focus ring that reads as a selection. */
   requestAnimationFrame(()=>{ sh.classList.add('on'); sh.focus({preventScroll:true}); });
@@ -2633,6 +2661,7 @@ function closeSheet(){
   const bg=document.querySelector('.sheet-bg'); bg.classList.remove('on','over-lock');
   document.body.classList.remove('sheet-open');
   document.querySelectorAll('#app > [inert]').forEach(n=>{ n.inert=false; });
+  _confirmFn=null; _sheetSnapshot=null;
   if(_sheetReturn && document.contains(_sheetReturn)) _sheetReturn.focus({preventScroll:true});
   _sheetReturn=null;
 }
@@ -2672,8 +2701,30 @@ function trapFocus(e){
 }
 /* Destructive and numeric decisions stay inside the app. A browser confirm()
    is the single loudest "this is a web page" tell there is. */
-let _confirmFn=null;
+let _confirmFn=null, _sheetSnapshot=null;
+/* A confirmation raised from an open sheet takes over that sheet, so cancelling
+   has to put the original back — including anything already typed into it.
+   A native confirm() was an overlay and never lost the form behind it. */
+function snapshotSheet(){
+  const sh=document.getElementById('sheet');
+  if(!sh.classList.contains('on')) return null;
+  const vals={};
+  sh.querySelectorAll('[id]').forEach(el=>{
+    if(el.type==='checkbox'||el.type==='radio') vals[el.id]={c:el.checked};
+    else if('value' in el) vals[el.id]={v:el.value};
+  });
+  return {html:sh.innerHTML, vals};
+}
+function restoreSheet(snap){
+  if(!snap) return false;
+  const sh=document.getElementById('sheet');
+  sh.innerHTML=snap.html;
+  Object.keys(snap.vals).forEach(id=>{ const el=document.getElementById(id); if(!el) return;
+    const v=snap.vals[id]; if('c' in v) el.checked=v.c; else el.value=v.v; });
+  return true;
+}
 function confirmSheet(o){
+  const snap=snapshotSheet();
   _confirmFn=o.onYes;
   const sh=document.getElementById('sheet'), bg=document.querySelector('.sheet-bg');
   /* The lock sits above the normal sheet layer, so lift the sheet over it. */
@@ -2681,10 +2732,13 @@ function confirmSheet(o){
   openSheet(`<h3 id="sheetTitle">${esc(o.title)}</h3>
     <div class="prose hint c" style="margin-bottom:var(--sp-4)">${o.body||''}</div>
     <button class="btn ${o.danger===false?'green':'danger'}" data-act="confirmyes">${esc(o.confirmLabel||'Confirm')}</button>
-    <button class="btn ghost" data-act="closesheet2">Cancel</button>`);
+    <button class="btn ghost" data-act="confirmno">Cancel</button>`);
+  _sheetSnapshot=snap;
 }
 function promptSheet(o){
-  _confirmFn=()=>{ const v=val('promptVal'); if(o.onYes) o.onYes(v); };
+  /* Returning the callback's value matters: `false` means "invalid, stay open",
+     and the confirm handler only honours that if it actually sees it. */
+  _confirmFn=()=>{ const v=val('promptVal'); return o.onYes ? o.onYes(v) : undefined; };
   openSheet(`<h3 id="sheetTitle">${esc(o.title)}</h3>
     ${o.body?`<div class="prose hint c" style="margin-bottom:var(--sp-3)">${o.body}</div>`:''}
     <input class="field" id="promptVal" inputmode="${o.inputmode||'text'}" value="${esc(o.value==null?'':o.value)}" aria-label="${esc(o.title)}">
@@ -2820,11 +2874,12 @@ function syncSheet(){
     </div>
     <button class="btn green" data-act="syncconnect">Sign in & connect</button>
     <button class="btn ghost" data-act="syncsignup">Create account</button>
-    <div id="syncmsg" class="errline" role="status"></div>`);
+    <div id="syncmsg" class="statusline" role="status"></div>`);
   }
 }
 function supReadForm(){ return { url:val('supurl').trim().replace(/\/+$/,''), key:val('supkey').trim(), email:val('supemail').trim(), pass:val('suppass') }; }
-function supMsg(t){ const m=document.getElementById('syncmsg'); if(m) m.textContent=t; }
+function supMsg(t,bad){ const m=document.getElementById('syncmsg'); if(!m) return;
+  m.textContent=t; m.classList.toggle('bad',!!bad); }
 async function supFinishConnect(){ const remote=await supPull(); if(remote) mergeRemote(remote); sync.enabled=true; sync.last=nowMs(); saveSync(); persistLocal(); await supPush(); saveSync(); setSyncDot('ok'); closeSheet(); render(); }
 
 /* ---------------- LIVE VIEW UPDATES ----------------
@@ -2949,9 +3004,11 @@ document.addEventListener('click', e=>{
     e.name=val('edname').trim()||'Food'; e.p=Math.round(+val('edp')||0); e.c=Math.round(+val('edc')||0); e.f=Math.round(+val('edf')||0); e.meal=state.sheetMeal||e.meal||'snacks'; delete e.det;
     touch(); save(); closeSheet(); render(); }
   else if(a==='dellogsheet'){ const i=+el.dataset.i; const s=dstore(); (s.log||[]).splice(i,1); touch(); save(); closeSheet(); render(); }
-  else if(a==='dellog'){ const s=dstore(); const i=+el.dataset.i; const gone=(s.log||[])[i];
-    (s.log||[]).splice(i,1); touch(); save(); render();
-    offerUndo('Removed '+(gone&&gone.name?gone.name:'entry'), ()=>{ const d=dstore(); (d.log=d.log||[]).splice(i,0,gone); touch(); save(); render(); }); }
+  else if(a==='dellog'){ const k=curKey(); const s=dstore(k); const i=+el.dataset.i; const gone=(s.log||[])[i];
+    (s.log||[]).splice(i,1); touch(k); save(); render();
+    /* Bind the day at delete time — the undo toast outlives a day change. */
+    offerUndo('Removed '+(gone&&gone.name?gone.name:'entry'), ()=>{
+      const d=dstore(k); (d.log=d.log||[]).splice(i,0,gone); touch(k); save(); render(); }); }
   else if(a==='exportcsv'){ exportCSV(); }
   else if(a==='qweight'){ const w=fromUnit(val('qw')); if(w!=null){ dstore().weight=w; touch(); save(); render(); } }
   else if(a==='bweight'){ const w=fromUnit(val('bw')); if(w!=null){ dstore().weight=w; touch(); save(); render(); } }
@@ -2962,9 +3019,11 @@ document.addEventListener('click', e=>{
     offerUndo('Photo removed', ()=>{ data.dates[k].photos.splice(pi,0,gone); touch(k); save(); render(); }); }
   else if(a==='menu'){ menuSheet(); }
   else if(a==='closesheet'||a==='closesheet2'){ closeSheet(); }
+  else if(a==='confirmno'){ _confirmFn=null;
+    if(_sheetSnapshot && restoreSheet(_sheetSnapshot)){ _sheetSnapshot=null; } else { _sheetSnapshot=null; closeSheet(); } }
   else if(a==='undo'){ const fn=_undoFn; _undoFn=null; clearTimeout(toastT);
     document.getElementById('toast').classList.remove('on'); if(fn) fn(); }
-  else if(a==='confirmyes'){ const fn=_confirmFn; if(fn && fn()===false) return; _confirmFn=null; }
+  else if(a==='confirmyes'){ const fn=_confirmFn; if(fn && fn()===false) return; _confirmFn=null; _sheetSnapshot=null; }
   else if(a==='export'){ exportData(); }
   else if(a==='import'){ document.getElementById('importInput').click(); }
   else if(a==='home'){ homeSheet(); }
@@ -2976,12 +3035,12 @@ document.addEventListener('click', e=>{
       confirmLabel:'Remove PIN', onYes:()=>{ delete data.pinHash; data.lockSkipped=true; touchSettings(); save(); closeSheet(); showToast('PIN lock removed'); } }); }
   else if(a==='setview'){ data.viewMode=el.dataset.v; touchSettings(); save(); applyViewMode(); menuSheet(); }
   else if(a==='syncsetup'){ syncSheet(); }
-  else if(a==='syncconnect'){ const f=supReadForm(); if(!f.url||!f.key||!f.email||!f.pass){ supMsg('Fill in all fields.'); return; } sync.url=f.url; sync.anonKey=f.key; supMsg('Signing in…');
+  else if(a==='syncconnect'){ const f=supReadForm(); if(!f.url||!f.key||!f.email||!f.pass){ supMsg('Fill in all fields.',true); return; } sync.url=f.url; sync.anonKey=f.key; supMsg('Signing in…');
     (async()=>{ try{ await supSignIn(f.email,f.pass); await supFinishConnect(); showToast('Cloud sync connected','good'); }
-      catch(e){ sync.enabled=false; sync.token=''; saveSync(); supMsg(typeof e==='string'?e:'Could not connect — check the URL, key, and password.'); setSyncDot('err'); } })(); }
-  else if(a==='syncsignup'){ const f=supReadForm(); if(!f.url||!f.key||!f.email||!f.pass){ supMsg('Fill in all fields.'); return; } sync.url=f.url; sync.anonKey=f.key; supMsg('Creating account…');
+      catch(e){ sync.enabled=false; sync.token=''; saveSync(); supMsg(typeof e==='string'?e:'Could not connect — check the URL, key, and password.',true); setSyncDot('err'); } })(); }
+  else if(a==='syncsignup'){ const f=supReadForm(); if(!f.url||!f.key||!f.email||!f.pass){ supMsg('Fill in all fields.',true); return; } sync.url=f.url; sync.anonKey=f.key; supMsg('Creating account…');
     (async()=>{ try{ const r=await supSignUp(f.email,f.pass); if(!r.session){ supMsg('Account created — check your email to confirm, then Sign in.'); return; } await supFinishConnect(); showToast('Account created and synced','good'); }
-      catch(e){ sync.enabled=false; sync.token=''; saveSync(); supMsg(typeof e==='string'?e:'Could not create account — check the URL and key.'); setSyncDot('err'); } })(); }
+      catch(e){ sync.enabled=false; sync.token=''; saveSync(); supMsg(typeof e==='string'?e:'Could not create account — check the URL and key.',true); setSyncDot('err'); } })(); }
   else if(a==='syncnow'){ closeSheet(); setSyncDot('sync'); (async()=>{ try{ const remote=await supPull(); if(remote){ mergeRemote(remote); persistLocal(); render(); } await supPush(); sync.last=nowMs(); saveSync(); setSyncDot('ok'); showToast('Synced','good'); }catch(e){ setSyncDot('err'); showToast('Sync failed — try again','err'); } })(); }
   else if(a==='syncoff'){ confirmSheet({title:'Disconnect cloud sync?', body:'You will be signed out on this device. Your log stays here, and nothing is deleted from the server.',
       confirmLabel:'Sign out', onYes:()=>{ sync=syncDefault(); saveSync(); setSyncDot(); closeSheet(); showToast('Cloud sync disconnected'); } }); }
@@ -3005,8 +3064,10 @@ document.addEventListener('input', e=>{
 /* Keyboard: the app is fully operable without a pointer. */
 document.addEventListener('keydown', e=>{
   /* The lock takes keyboard input — essential on a computer, handy on a phone
-     with a hardware keyboard. */
-  if(document.getElementById('lock').classList.contains('on')){
+     with a hardware keyboard. A sheet raised over it (the forgot-code
+     confirmation) wins: otherwise you could type your way past a live
+     "erase everything" dialog. */
+  if(document.getElementById('lock').classList.contains('on') && !sheetOpen()){
     if(/^[0-9]$/.test(e.key)){ e.preventDefault(); lockDigit(e.key); return; }
     if(e.key==='Backspace'){ e.preventDefault(); lockDel(); return; }
     return;
@@ -3018,6 +3079,9 @@ document.addEventListener('keydown', e=>{
   if(e.key==='Tab' && sheetOpen()){ trapFocus(e); return; }
   const act=e.target.closest && e.target.closest('[data-act][role="button"]');
   if(act && (e.key==='Enter'||e.key===' ')){ e.preventDefault(); act.click(); return; }
+  if(e.key==='Enter' && e.target && e.target.id==='promptVal'){
+    e.preventDefault(); const go=document.querySelector('[data-act="confirmyes"]'); if(go) go.click(); return;
+  }
   /* Enter in a set field moves to the next one and ticks the row off at the end. */
   if(e.key==='Enter'){
     const inp=e.target.closest && e.target.closest('.setrow input');
@@ -3111,7 +3175,7 @@ function exportCSV(){
   a.href=u; a.download='physiq-export.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(u),1000); closeSheet();
 }
 
-document.getElementById('lockPad').addEventListener('click', e=>{ const b=e.target.closest('[data-lk]'); if(!b) return; const k=b.dataset.lk; if(k==='del') lockDel(); else lockDigit(k); });
+document.getElementById('lockPad').addEventListener('click', e=>{ if(sheetOpen()) return; const b=e.target.closest('[data-lk]'); if(!b) return; const k=b.dataset.lk; if(k==='del') lockDel(); else lockDigit(k); });
 document.getElementById('lockLink').addEventListener('click', ()=>{
   if(lockMode==='create'){ data.lockSkipped=true; touchSettings(); save(); hideLock(); }
   else if(lockMode==='confirm'){ buf=''; firstPin=''; lockMode='create'; renderLock(); }

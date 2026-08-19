@@ -5,9 +5,10 @@
    Strategy is deliberately split:
      - navigations go NETWORK FIRST, so a deploy is picked up on the next online
        load and no one is ever stuck on a stale build;
-     - everything else same-origin goes CACHE FIRST and refreshes in the
-       background, so a cold start is instant.
-   Cross-origin requests (Supabase, Open Food Facts) are never touched. */
+     - the shell assets go CACHE FIRST and refresh in the background, so a cold
+       start is instant.
+   Only successful responses are ever written to the cache, and cross-origin
+   requests (Supabase, Open Food Facts) are never touched. */
 const CACHE = 'physiq-v1';
 const SHELL = [
   './',
@@ -17,9 +18,21 @@ const SHELL = [
   './brand/png/web/icon-512.png'
 ];
 
+/* Cache.addAll is atomic: one missing entry and nothing is stored at all.
+   Warm each entry on its own so a single 404 can't disable offline support. */
+async function warm() {
+  const cache = await caches.open(CACHE);
+  await Promise.all(SHELL.map(async url => {
+    try {
+      const res = await fetch(url, { cache: 'reload' });
+      if (res && res.ok) await cache.put(url, res);
+    } catch (e) { /* offline at install time; the fetch handler fills in later */ }
+  }));
+}
+
 self.addEventListener('install', e => {
   self.skipWaiting();
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL).catch(() => {})));
+  e.waitUntil(warm());
 });
 
 self.addEventListener('activate', e => {
@@ -39,20 +52,22 @@ self.addEventListener('fetch', e => {
     e.respondWith(
       fetch(req)
         .then(res => {
-          const copy = res.clone();
-          caches.open(CACHE).then(c => c.put('./index.html', copy));
+          /* Never let a 404 or a captive-portal page overwrite the shell. */
+          if (res && res.ok && res.type === 'basic') {
+            const copy = res.clone();
+            caches.open(CACHE).then(c => c.put('./index.html', copy));
+          }
           return res;
         })
-        .catch(() => caches.match('./index.html', { ignoreSearch: true })
-          .then(hit => hit || caches.match('./')))
+        .catch(() => caches.match('./index.html').then(hit => hit || caches.match('./')))
     );
     return;
   }
 
   e.respondWith(
-    caches.match(req, { ignoreSearch: true }).then(hit => {
+    caches.match(req).then(hit => {
       const network = fetch(req).then(res => {
-        if (res && res.ok) {
+        if (res && res.ok && res.type === 'basic') {
           const copy = res.clone();
           caches.open(CACHE).then(c => c.put(req, copy));
         }
