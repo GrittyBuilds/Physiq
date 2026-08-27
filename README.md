@@ -19,6 +19,19 @@ your Home Screen — it installs as a standalone app and runs fully offline.
 | `supabase-setup.sql` | One-time setup for the optional cloud sync — creates the table and locks it down with row-level security. |
 | `brand/` | The progress-ring mark, wordmark, app icons, palette and usage rules. See [`brand/README.txt`](brand/README.txt) and open [`brand/physiq-brandsheet.html`](brand/physiq-brandsheet.html). |
 
+## Repeating meals
+
+Eating the same thing two or three times a day is normal, and re-logging it
+means re-entering the amount. Anything already logged can be copied instead,
+carrying its macros and serving note over exactly:
+
+- **A whole meal** — the copy button in any meal header. Pick any number of
+  destinations at once, including the same meal again if you ate it twice.
+- **A single item** — the copy button on its row, or from the entry itself.
+- **Into an empty meal** — an empty meal offers to copy an earlier one in.
+
+Every copy comes with an Undo.
+
 ## Design system
 
 Everything in the UI is drawn from one token set at the top of the `<style>`

@@ -616,16 +616,26 @@
     letter-spacing:0}
   .meal-r{display:flex;align-items:center;gap:var(--sp-2)}
   .meal-sub{font-size:var(--fs-xs);color:var(--t3);font-family:var(--f-num);font-variant-numeric:tabular-nums}
-  .meal-empty{font-size:var(--fs-xs);color:var(--t3);padding:var(--sp-2) var(--sp-1);
-    border:1px dashed var(--line);border-radius:var(--r-md);text-align:center}
+  .meal-empty{font-size:var(--fs-xs);color:var(--t3);padding:var(--sp-3) var(--sp-2);
+    border:1px dashed var(--line);border-radius:var(--r-md);text-align:center;width:100%}
+  .meal-empty.tap{display:flex;align-items:center;justify-content:center;gap:7px;min-height:var(--tap);
+    cursor:pointer;transition:border-color var(--d-2) var(--ease),color var(--d-2) var(--ease),
+      background var(--d-2) var(--ease)}
+  .meal-empty.tap .ic{width:15px;height:15px}
+  .meal-empty.tap:hover{border-color:var(--line-2);color:var(--t1);background:var(--s2)}
+  .meal-empty.tap:active{transform:scale(.99)}
   .meal{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-3);border:1px solid var(--line);
     border-radius:var(--r-md);margin-bottom:var(--sp-2);background:var(--s1);
     transition:border-color var(--d-2) var(--ease),background var(--d-2) var(--ease)}
   .meal:hover{border-color:var(--line-2);background:var(--s2)}
-  .meal .info{flex:1;min-width:0}
-  .meal .info .nm{font-weight:600;font-size:var(--fs-sm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .meal .info .mac{font-size:var(--fs-xs);color:var(--t3);margin-top:3px;font-family:var(--f-num);font-variant-numeric:tabular-nums}
-  .meal .info .det{font-size:var(--fs-cap);color:var(--t3);margin-top:2px}
+  .meal .info{flex:1;min-width:0;display:block;text-align:left;padding:var(--sp-2) 0;margin:calc(var(--sp-2) * -1) 0;
+    border-radius:var(--r-sm)}
+  .meal .info .nm{display:block;font-weight:600;font-size:var(--fs-sm);overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .meal .info:hover .nm{text-decoration:underline;text-decoration-color:var(--line-2);text-underline-offset:3px}
+  .meal .info .mac{display:block;font-size:var(--fs-xs);color:var(--t3);margin-top:3px;
+    font-family:var(--f-num);font-variant-numeric:tabular-nums}
+  .meal .info .det{display:block;font-size:var(--fs-cap);color:var(--t3);margin-top:2px}
   .meal .kc{font-size:var(--fs-cap);color:var(--t3);font-family:var(--f-num);font-variant-numeric:tabular-nums;flex:none;
     text-align:right;line-height:1.25}
   .meal .kc b{display:block;color:var(--t1);font-size:var(--fs-md);font-family:var(--f-num);
@@ -870,7 +880,9 @@
     font-size:var(--fs-sm);font-weight:700;color:var(--accent);flex:none;
     pointer-events:auto;transition:background var(--d-1) var(--ease)}
   .toast-undo:hover{background:var(--accent-soft)}
-  .toast:has(.toast-undo){pointer-events:auto}
+  /* Only a *visible* undo toast takes pointer events — otherwise the faded
+     element keeps eating taps over the content behind it. */
+  .toast.on:has(.toast-undo){pointer-events:auto}
   .toast.good .ic{color:var(--good)}
   .toast.win{border-color:var(--accent-line);
     box-shadow:0 14px 36px -12px rgba(0,0,0,.85), 0 0 0 1px var(--accent-line)}
@@ -1237,6 +1249,7 @@ const ICONS={
   minus:'<path d="M5 12h14"/>',
   close:'<path d="M6 6l12 12M18 6L6 18"/>',
   pencil:'<path d="M4 20h4L20 8a2.5 2.5 0 10-4-3L4 17v3z"/>',
+  copy:'<rect x="9" y="9" width="11.5" height="11.5" rx="2.5"/><path d="M15 6.6V6a2 2 0 00-2-2H5.5a2 2 0 00-2 2v7.5a2 2 0 002 2H6"/>',
   trash:'<path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13"/>',
   star:'<path d="M12 3.5l2.6 5.5 5.9.8-4.3 4.2 1 6-5.2-2.9-5.2 2.9 1-6L3.5 9.8l5.9-.8z"/>',
   swap:'<path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/>',
@@ -1929,7 +1942,7 @@ function viewToday(){
   if(!log.length) out+=`<div class="empty">${ic('plate')}Nothing logged yet.</div>`;
   else {
     const recent=log.slice(-5).reverse();
-    out+=`<div class="wlist">`+recent.map(e=>{ const kc=(+e.p||0)*4+(+e.c||0)*4+(+e.f||0)*9;
+    out+=`<div class="wlist">`+recent.map(e=>{ const kc=entryKc(e);
       return `<div class="wi"><span>${esc(e.name)}<small style="display:block;color:var(--t4);font-size:var(--fs-cap)">${mealName(e.meal)}</small></span>
         <b class="num">${kc} kcal</b></div>`; }).join('')+`</div>`;
     if(log.length>5) out+=`<div class="hint tail">+ ${log.length-5} more today</div>`;
@@ -2050,6 +2063,9 @@ function setSwap(orig,newName){ const s=dstore(); s.swaps=s.swaps||{};
 /* Meals for the food log. defaultMeal picks by time of day when adding. */
 const MEALS=[{id:'pre',name:'Pre-Workout'},{id:'post',name:'Post-Workout'},{id:'lunch',name:'Lunch'},{id:'dinner',name:'Dinner'},{id:'snacks',name:'Snacks'}];
 function mealName(id){ const m=MEALS.find(x=>x.id===id); return m?m.name:'Snacks'; }
+/* An entry's meal, normalised — legacy rows can carry an id we no longer use. */
+function mealOf(e){ return (e && MEALS.some(m=>m.id===e.meal)) ? e.meal : 'snacks'; }
+function entryKc(e){ return (+e.p||0)*4 + (+e.c||0)*4 + (+e.f||0)*9; }
 function defaultMeal(){ const h=new Date().getHours(); if(h<10) return 'pre'; if(h<14) return 'lunch'; if(h<17) return 'post'; if(h<21) return 'dinner'; return 'snacks'; }
 function mealSeg(sel){ return `<div class="seg sm scroll mealseg" role="group" aria-label="Meal">`
   +MEALS.map(m=>`<button class="${m.id===sel?'on':''}" data-act="pickmeal" data-m="${m.id}" aria-pressed="${m.id===sel}">${m.name}</button>`).join('')+`</div>`; }
@@ -2085,19 +2101,31 @@ function viewFuel(){
   out+=`<button class="btn" data-act="addfood">${ic('plus')} Add food</button>`;
   out+=`<div class="mealgrid">`;
   const buckets={}; MEALS.forEach(m=>buckets[m.id]=[]);
-  log.forEach((e,i)=>{ const mid=buckets[e.meal]?e.meal:'snacks'; buckets[mid].push({e,i}); });
+  log.forEach((e,i)=>{ buckets[mealOf(e)].push({e,i}); });
+  const anyLogged=log.length>0;
   MEALS.forEach(m=>{ const items=buckets[m.id];
-    const sub=items.reduce((a,x)=>a+((+x.e.p||0)*4+(+x.e.c||0)*4+(+x.e.f||0)*9),0);
+    const sub=items.reduce((a,x)=>a+entryKc(x.e),0);
     out+=`<div class="mealsec"><div class="meal-h"><div class="meal-nm">${m.name}${items.length?` <span class="meal-ct">${items.length}</span>`:''}</div>
       <div class="meal-r"><span class="meal-sub">${items.length?sub.toLocaleString()+' kcal':''}</span>
+      ${items.length?`<button class="rowbtn" data-act="copymeal" data-m="${m.id}" aria-label="Copy ${m.name} to another meal" title="Copy to another meal">${ic('copy')}</button>`:''}
       <button class="rowbtn accent" data-act="addmeal" data-m="${m.id}" aria-label="Add food to ${m.name}">${ic('plus')}</button></div></div>`;
-    if(!items.length) out+=`<div class="meal-empty">Nothing logged</div>`;
-    else items.forEach(({e,i})=>{ const kc=(+e.p||0)*4+(+e.c||0)*4+(+e.f||0)*9;
-      out+=`<div class="meal"><div class="info"><div class="nm">${esc(e.name)}</div>
-        <div class="mac">${e.p}P · ${e.c}C · ${e.f}F</div>${e.det?`<div class="det">${esc(e.det)}</div>`:''}</div>
-        <div class="kc"><b>${kc}</b>kcal</div>
+    if(!items.length){
+      /* An empty meal is the moment you want to repeat an earlier one, so the
+         empty state does that job instead of just reporting itself. */
+      out+= anyLogged
+        ? `<button class="meal-empty tap" data-act="copyinto" data-m="${m.id}">${ic('copy')} Copy from another meal</button>`
+        : `<div class="meal-empty">Nothing logged</div>`;
+    }
+    else items.forEach(({e,i})=>{
+      /* The row itself edits — that keeps copy and delete as the only two
+         icon buttons, and gives editing a target the width of the card. */
+      out+=`<div class="meal">
+        <button class="info" data-act="editlog" data-i="${i}" aria-label="Edit ${esc(e.name)}">
+          <span class="nm">${esc(e.name)}</span>
+          <span class="mac">${e.p}P · ${e.c}C · ${e.f}F</span>${e.det?`<span class="det">${esc(e.det)}</span>`:''}</button>
+        <div class="kc"><b>${entryKc(e)}</b>kcal</div>
         <div class="meal-acts">
-          <button class="rowbtn" data-act="editlog" data-i="${i}" aria-label="Edit ${esc(e.name)}">${ic('pencil')}</button>
+          <button class="rowbtn" data-act="copyentry" data-i="${i}" aria-label="Copy ${esc(e.name)} to another meal" title="Copy to another meal">${ic('copy')}</button>
           <button class="rowbtn danger" data-act="dellog" data-i="${i}" aria-label="Delete ${esc(e.name)}">${ic('trash')}</button>
         </div></div>`; });
     out+=`</div>`;
@@ -2278,8 +2306,66 @@ function editLogSheet(i){ const s=dstore(); const e=(s.log||[])[i]; if(!e) retur
       <input class="field" id="edf" inputmode="decimal" placeholder="Fat g" value="${e.f!=null?e.f:''}" data-in="edcalc" aria-label="Fat grams"></div>
     <div id="edcalc" class="calcline"></div>
     <button class="btn green" data-act="savelog" data-i="${i}">Save changes</button>
+    <button class="btn ghost" data-act="copyentry" data-i="${i}">${ic('copy')} Copy to another meal</button>
     <button class="btn danger" data-act="dellogsheet" data-i="${i}">${ic('trash')} Delete this entry</button>`);
   updateEdCalc();
+}
+/* ---- Copy logged food to other meals ----
+   Eating the same meal two or three times a day is the norm, and re-logging it
+   means re-entering the amount. Copying carries the entry over exactly, and any
+   number of destinations can be picked at once. */
+function copyItems(src){
+  const log=dstore().log||[];
+  if(src && src.meal!=null) return log.map((e,i)=>({e,i})).filter(x=>mealOf(x.e)===src.meal);
+  if(src && src.i!=null && log[src.i]) return [{e:log[src.i], i:src.i}];
+  return [];
+}
+function copySheet(src){
+  const items=copyItems(src);
+  if(!items.length){ showToast('Nothing to copy','err'); return; }
+  state.copySrc=src;
+  const from = src.meal!=null ? src.meal : mealOf(items[0].e);
+  const kc = items.reduce((a,x)=>a+entryKc(x.e),0);
+  const title = src.meal!=null ? mealName(src.meal) : items[0].e.name;
+  const summary = src.meal!=null
+    ? `${items.length} item${items.length===1?'':'s'} · ${kc.toLocaleString()} kcal`
+    : `${items[0].e.p}P · ${items[0].e.c}C · ${items[0].e.f}F · ${kc.toLocaleString()} kcal${items[0].e.det?' · '+esc(items[0].e.det):''}`;
+  openSheet(`<h3 id="sheetTitle">Copy ${esc(title)}</h3>
+    <div class="hint c" style="margin-bottom:var(--sp-4)">${summary}</div>
+    <div class="sect-title" style="margin-top:0">Copy to</div>
+    <div class="foodchips" role="group" aria-label="Destination meals" style="margin-bottom:var(--sp-4)">${
+      MEALS.map(m=>`<button class="foodchip" data-act="copypick" data-m="${m.id}" aria-pressed="false">${m.name}${m.id===from?' again':''}</button>`).join('')}</div>
+    <button class="btn green" data-act="copydo" disabled>${ic('copy')} Copy</button>
+    <div class="hint c" id="copyHint" style="margin-top:var(--sp-2)">Pick one or more meals.</div>`);
+}
+/* The mirror image, offered from an empty meal: pull an earlier meal into it. */
+function copyIntoSheet(dest){
+  const log=dstore().log||[];
+  const groups=MEALS.filter(m=>m.id!==dest)
+    .map(m=>({m, items:log.filter(e=>mealOf(e)===m.id)}))
+    .filter(g=>g.items.length);
+  if(!groups.length){ showToast('Nothing logged yet today','err'); return; }
+  openSheet(`<h3 id="sheetTitle">Copy into ${mealName(dest)}</h3>
+    <div class="hint c" style="margin-bottom:var(--sp-4)">Pick the meal to repeat.</div>
+    <div class="menulist">${groups.map(g=>`
+      <button class="menurow" data-act="copyfrom" data-from="${g.m.id}" data-to="${dest}">${ic('copy')}
+        <span class="mr-t">${g.m.name}<small>${g.items.length} item${g.items.length===1?'':'s'} · ${g.items.reduce((a,e)=>a+entryKc(e),0).toLocaleString()} kcal</small></span>
+        <span class="chev">${ic('chevright')}</span></button>`).join('')}</div>`);
+}
+/* One place where a copy actually happens, so undo is identical whichever
+   entry point you came from. */
+function doCopy(items, dests){
+  if(!items.length || !dests.length) return;
+  const k=curKey(); const s=dstore(k); s.log=s.log||[];
+  const added=[];
+  dests.forEach(m=>items.forEach(({e})=>{
+    const c=Object.assign({},e,{meal:m}); s.log.push(c); added.push(c);
+  }));
+  touch(k); save(); closeSheet(); render(); checkTargets();
+  const where = dests.length===1 ? mealName(dests[0]) : dests.length+' meals';
+  offerUndo(`Copied ${added.length} item${added.length===1?'':'s'} to ${where}`, ()=>{
+    const d=dstore(k); d.log=(d.log||[]).filter(x=>added.indexOf(x)<0); touch(k); save(); render();
+  });
 }
 function updateEdCalc(){ const el=document.getElementById('edcalc'); if(!el) return;
   const p=parseFloat(val('edp'))||0,c=parseFloat(val('edc'))||0,f=parseFloat(val('edf'))||0;
@@ -3000,6 +3086,21 @@ document.addEventListener('click', e=>{
     (s.log=s.log||[]).push(entry); f.used=nowMs(); state.fuelMeal=null; touch(); touchSettings(); save(); closeSheet(); render();
     showToast('Logged '+f.name+' to '+mealName(entry.meal),'good'); checkTargets(); }
   else if(a==='editlog'){ editLogSheet(+el.dataset.i); }
+  else if(a==='copymeal'){ copySheet({meal:el.dataset.m}); }
+  else if(a==='copyentry'){ copySheet({i:+el.dataset.i}); }
+  else if(a==='copyinto'){ copyIntoSheet(el.dataset.m); }
+  else if(a==='copyfrom'){ doCopy(copyItems({meal:el.dataset.from}), [el.dataset.to]); }
+  else if(a==='copypick'){ const on=el.getAttribute('aria-pressed')==='true';
+    el.setAttribute('aria-pressed', on?'false':'true'); el.classList.toggle('on', !on); haptic('pick');
+    const picked=[...document.querySelectorAll('[data-act="copypick"][aria-pressed="true"]')];
+    const go=document.querySelector('[data-act="copydo"]'); if(go) go.disabled=!picked.length;
+    const hint=document.getElementById('copyHint');
+    if(hint) hint.textContent = picked.length
+      ? 'Copying to '+picked.map(b=>mealName(b.dataset.m)).join(', ')
+      : 'Pick one or more meals.'; }
+  else if(a==='copydo'){
+    const dests=[...document.querySelectorAll('[data-act="copypick"][aria-pressed="true"]')].map(b=>b.dataset.m);
+    doCopy(copyItems(state.copySrc), dests); }
   else if(a==='savelog'){ const i=+el.dataset.i; const s=dstore(); const e=(s.log||[])[i]; if(!e) return;
     e.name=val('edname').trim()||'Food'; e.p=Math.round(+val('edp')||0); e.c=Math.round(+val('edc')||0); e.f=Math.round(+val('edf')||0); e.meal=state.sheetMeal||e.meal||'snacks'; delete e.det;
     touch(); save(); closeSheet(); render(); }
