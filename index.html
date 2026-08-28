@@ -309,6 +309,19 @@
     line-height:var(--lh-base);display:flex;gap:var(--sp-3);align-items:flex-start}
   .banner .ic{width:17px;height:17px;flex:none;margin-top:1px;color:var(--t3)}
   .banner b{color:var(--t1);font-weight:650}
+  .ebal-pm{font-size:var(--fs-cap);color:var(--t3);font-weight:600;
+    letter-spacing:.01em;margin-top:1px}
+  /* Storage alert — lives in the header, not a view, because the failure it
+     reports (a full device) happens while you are logging on any tab. */
+  .salert{display:flex;gap:var(--sp-3);align-items:flex-start;
+    padding:var(--sp-3) var(--sp-4);font-size:var(--fs-xs);line-height:var(--lh-base);
+    color:var(--t1);background:color-mix(in srgb, var(--warn) 14%, var(--s1));
+    border-top:1px solid color-mix(in srgb, var(--warn) 40%, transparent)}
+  .salert.bad{background:color-mix(in srgb, var(--bad) 15%, var(--s1));
+    border-top-color:color-mix(in srgb, var(--bad) 45%, transparent)}
+  .salert .ic{width:17px;height:17px;flex:none;margin-top:1px}
+  .salert b{font-weight:700}
+  .salert .lnk{white-space:nowrap}
 
   /* ===================================================================
      BUTTONS
@@ -1278,6 +1291,7 @@
       </div>
     </div>
     <div class="daybar" id="daybar" hidden></div>
+    <div class="salert" id="salert" role="status" hidden></div>
   </div>
   <nav aria-label="Sections">
     <div class="nav-brand"><span class="nav-mark">Q</span><span class="nav-word">Physiq</span></div>
@@ -1814,22 +1828,148 @@ const MC = {kc:'var(--accent)', p:'var(--macro-p)', c:'var(--macro-c)', f:'var(-
 
 /* ---------------- STORAGE (with graceful fallback) ---------------- */
 const KEY='cp_tracker_v1';
+const PREV_KEY = KEY+'_prev';
+/* Declared before `data` is loaded — load() stamps fresh blobs with it. */
+const SCHEMA_V = 2;
+let SCHEMA_AHEAD = false;   /* stored blob is newer than this build understands */
+/* THE SYNC CONTRACT. Every persisted top-level setting that should travel
+   between a user's devices is named here, and mergeRemote() reads nothing else.
+   A new top-level key that is not in this list will appear to work perfectly on
+   one device and silently never arrive on the second — which is why
+   auditSchema() shouts about anything it does not recognise.
+   Deliberately absent: `dates` (merged per-day, not wholesale), `v` (the blob's
+   own shape), `updatedAt` (the clock the merge is decided by), and `viewMode`
+   (a per-device display preference — a phone should not inherit a desktop's). */
+const SYNC_FIELDS = ['unit','restDefault','deloadWeeks','blockStart','pinHash','lockSkipped',
+  'foods','rotationPos','rotationByPhase','phase','phaseTargets','phaseMode','focus',
+  'presetsRemoved','mealsV3','migratedFood','profile','onboarded'];
+const SYNC_EXEMPT = ['v','dates','updatedAt','viewMode'];
+function auditSchema(){
+  const unknown=Object.keys(data).filter(k=>SYNC_FIELDS.indexOf(k)<0 && SYNC_EXEMPT.indexOf(k)<0);
+  if(unknown.length) console.warn('[physiq] persisted key(s) missing from SYNC_FIELDS — these will never sync:', unknown.join(', '));
+}
 let STORAGE_OK=true;
+/* Why saving failed, when it did. 'blocked' is a sandbox with no localStorage
+   at all; 'full' is a device that has run out of room — a completely different
+   problem with a completely different remedy, and the app used to report both
+   as the first one. */
+let STORAGE_ERR=null;
+const STORAGE_BUDGET=5000000;   /* chars — the de-facto localStorage ceiling */
+const STORAGE_WARN=0.82;        /* shout before the wall, not after */
+function noteStorageError(e){
+  STORAGE_OK=false;
+  STORAGE_ERR=(e && (e.name==='QuotaExceededError'||e.name==='NS_ERROR_DOM_QUOTA_REACHED'||e.code===22||e.code===1014))
+    ? 'full' : 'blocked';
+}
+function storageChars(){ try{ return JSON.stringify(data).length; }catch(e){ return 0; } }
+function photoChars(){ let n=0;
+  Object.keys(data.dates||{}).forEach(k=>{ ((data.dates[k]||{}).photos||[]).forEach(p=>{ n+=String(p).length; }); });
+  return n; }
+function fmtMB(chars){ return (chars/1048576).toFixed(1)+' MB'; }
+let lastSaveOk=0;
+/* The header strip that says storage is in trouble. Rendered outside #view so
+   it is visible on whichever tab you are on when the device fills up —
+   previously this was a Today-tab-only banner, so a user logging sets or food
+   saw nothing at all while every write was being silently dropped. */
+function storageAlertHTML(){
+  if(STORAGE_ERR==='full'){
+    const since=lastSaveOk? ' Nothing has saved since '+timeAgo(lastSaveOk)+'.' : '';
+    const ph=photoChars();
+    return {cls:'bad', html:`${ic('info','ic')}<div><b>This device is out of storage.</b>${since}
+      Your last few changes are only in memory and will be lost when you close the app.
+      ${ph>200000?`Progress photos are using ${fmtMB(ph)} of it — deleting a few frees space immediately. `:''}
+      <span class="lnk" role="button" tabindex="0" data-act="export">Export a backup now</span></div>`};
+  }
+  if(STORAGE_ERR==='blocked'){
+    return {cls:'', html:`${ic('info','ic')}<div><b>Saving is blocked here.</b> This preview cannot write to storage —
+      open the file in your browser, or add it to your Home Screen, and your data will persist.</div>`};
+  }
+  const used=storageChars();
+  if(used > STORAGE_BUDGET*STORAGE_WARN){
+    const ph=photoChars();
+    return {cls:'', html:`${ic('info','ic')}<div><b>Storage is nearly full</b> — about ${fmtMB(used)} of ${fmtMB(STORAGE_BUDGET)} used${ph>200000?`, ${fmtMB(ph)} of it progress photos`:''}.
+      <span class="lnk" role="button" tabindex="0" data-act="export">Export a backup</span> before it runs out.</div>`};
+  }
+  return null;
+}
+function paintStorageAlert(){
+  const el=document.getElementById('salert'); if(!el) return;
+  const a=storageAlertHTML();
+  if(!a){ el.hidden=true; el.innerHTML=''; el.className='salert'; return; }
+  el.hidden=false; el.className='salert '+a.cls; el.innerHTML=a.html;
+}
 let data = load();
 let sync = loadSync();
 function nowMs(){ return Date.now(); }
 function load(){
   try{ const raw=localStorage.getItem(KEY); if(raw) return JSON.parse(raw); }
   catch(e){ STORAGE_OK=false; }
-  return {v:1, unit:'lb', restDefault:120, dates:{}};
+  /* A blob that never existed needs no migrating — stamp it current. */
+  return {v:SCHEMA_V, unit:'lb', restDefault:120, dates:{}};
+}
+/* ---------------- SCHEMA VERSION & MIGRATIONS ----------------
+   `data.v` is the shape of the stored blob. Migrations run once, in order, on
+   cold start, and each one must be safe to run against a blob that has already
+   had it applied — a stale service worker, a restored backup or a sync from an
+   older device can all replay history.
+
+   Migrations numbered below 2 do not exist: the pre-versioning defaults and
+   fixups live in ensureDefaults() behind their own boolean flags
+   (presetsRemoved / mealsV3 / migratedFood), and they must keep running there,
+   because blobs written before this scheme have no `v` to compare against. */
+const MIGRATIONS = [
+  {v:2, name:'set completion is explicit', up(d){
+    /* PRs, e1RM and volume now count only sets marked done — which is what the
+       tick has always meant everywhere else in the app (weeklyVolume,
+       sessionDone). Before this release nothing asked the user to draw that
+       line, so a fully filled row is the best evidence we have that the set
+       happened; dropping it would silently delete years of personal records.
+       From here on, done means done. */
+    Object.keys(d.dates||{}).forEach(k=>{
+      const sets=(d.dates[k]||{}).sets||{};
+      Object.keys(sets).forEach(ex=>{
+        (sets[ex]||[]).forEach(st=>{
+          if(st && st.done===undefined && st.w!=null && st.w!=='' && st.r!=null && st.r!=='') st.done=true;
+        });
+      });
+    });
+  }},
+];
+
+/* One tap of insurance. The blob as it stood before any migration touched it,
+   kept under its own key so a bad upgrade is recoverable from Settings rather
+   than from a backup the user never made. */
+function snapshotBlob(from){
+  try{
+    const raw=localStorage.getItem(KEY); if(!raw) return;
+    localStorage.setItem(PREV_KEY, JSON.stringify({at:nowMs(), v:from, blob:raw}));
+  }catch(e){ /* out of room — the migration still matters more than the snapshot */ }
+}
+function prevSnapshot(){
+  try{ const r=localStorage.getItem(PREV_KEY); return r? JSON.parse(r) : null; }catch(e){ return null; }
+}
+function runMigrations(){
+  let from=parseInt(data.v,10); if(!(from>=1)) from=1;
+  if(from>SCHEMA_V){
+    /* Written by a newer build. Do not migrate down and do not sync — either
+       would quietly drop keys this build has never heard of. */
+    SCHEMA_AHEAD=true; return;
+  }
+  if(from===SCHEMA_V) return;
+  snapshotBlob(from);
+  MIGRATIONS.forEach(m=>{ if(m.v>from && m.v<=SCHEMA_V){ try{ m.up(data); }catch(e){} } });
+  data.v=SCHEMA_V;
+  persistLocal();
 }
 let saveTimer=null;
 function save(){
   clearTimeout(saveTimer);
-  saveTimer=setTimeout(()=>{ try{ localStorage.setItem(KEY, JSON.stringify(data)); } catch(e){ STORAGE_OK=false; }
+  saveTimer=setTimeout(()=>{ try{ localStorage.setItem(KEY, JSON.stringify(data)); STORAGE_OK=true; STORAGE_ERR=null; lastSaveOk=nowMs(); }
+    catch(e){ noteStorageError(e); paintStorageAlert(); }
     schedulePush(); }, 150);
 }
-function persistLocal(){ try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){ STORAGE_OK=false; } }
+function persistLocal(){ try{ localStorage.setItem(KEY, JSON.stringify(data)); STORAGE_OK=true; STORAGE_ERR=null; lastSaveOk=nowMs(); }
+  catch(e){ noteStorageError(e); paintStorageAlert(); } }
 function touch(k){ k=k||curKey(); const s=dstore(k); s._u=nowMs(); }
 function touchSettings(){ data.updatedAt=nowMs(); }
 /* ---------------- STATE ---------------- */
@@ -1899,6 +2039,8 @@ const TDEE_WINDOW = 28;        /* days of history the estimate looks at */
 const TDEE_MIN_DAYS = 10;      /* intake days needed before we trust a measurement */
 const TDEE_MIN_SPAN = 10;      /* days the weigh-ins must span */
 const TDEE_MIN_WEIGHINS = 6;   /* below this a single water-weight day IS the slope */
+const MIN_LOGGED_KC = 500;     /* below this nobody logged a day, they abandoned one */
+const PARTIAL_DAY_FRAC = 0.55; /* a day under 55% of your own median is under-logged, not eaten */
 
 function profile(){ return (data && data.profile) || {}; }
 /* Mifflin-St Jeor, the standard predictive equation. Used as the starting point
@@ -1920,16 +2062,28 @@ function activityMult(){ const a=ACTIVITY.find(x=>x.id===profile().activity); re
 function formulaTDEE(){ const b=mifflinBMR(); return b==null? null : Math.round(b*activityMult()); }
 
 /* Every day in the window, with its logged intake (null when nothing was logged). */
+/* A day is evidence only if it looks like a whole day's eating.
+   An absolute floor cannot tell a real 1,400 kcal cut day from a half-logged
+   3,200 kcal one — it accepts both, and the second poisons a 28-day mean for a
+   month. So the bar is relative to the user's own typical intake: the median of
+   the days they did log. Each excluded day carries the reason, so the Energy
+   card can say which days it used rather than quietly dropping them. */
 function energyDays(win, endKey){
   win=win||TDEE_WINDOW;
-  const out=[]; const end=endKey||todayKey();
+  const raw=[]; const end=endKey||todayKey();
   for(let i=win-1;i>=0;i--){
     const k=addDays(end,-i), d=data.dates[k];
-    const kc=d? (d.log||[]).reduce((a,e)=>a+entryKc(e),0) : 0;
-    /* A day with a token amount logged is a day someone forgot, not a fast. */
-    out.push({k, kc: kc>=500? kc : null, w: d && d.weight!=null ? d.weight : null});
+    raw.push({k, kc: d? (d.log||[]).reduce((a,e)=>a+entryKc(e),0) : 0,
+              w: d && d.weight!=null ? d.weight : null});
   }
-  return out;
+  const logged=raw.filter(d=>d.kc>=MIN_LOGGED_KC).map(d=>d.kc).sort((a,b)=>a-b);
+  const med=logged.length? logged[Math.floor(logged.length/2)] : 0;
+  const floor=Math.max(MIN_LOGGED_KC, Math.round(med*PARTIAL_DAY_FRAC));
+  return raw.map(d=>{
+    const why = d.kc<MIN_LOGGED_KC ? (d.kc>0?'partial':'empty')
+              : d.kc<floor ? 'partial' : null;
+    return {k:d.k, kc: why? null : d.kc, logged:d.kc, w:d.w, excluded:why};
+  });
 }
 function lastWeightBefore(key){
   const ks=Object.keys(data.dates||{}).filter(k=>k<=key && data.dates[k] && data.dates[k].weight!=null).sort();
@@ -1954,7 +2108,21 @@ function weightSlope(days){
   let num=0, den=0;
   pts.forEach(p=>{ num+=(p.x-mx)*(p.y-my); den+=(p.x-mx)*(p.x-mx); });
   if(!den) return null;
-  return {slope:num/den, span, points:n};
+  /* How firm is that slope? Measured on the RAW weigh-ins, not the smoothed
+     ones: smoothing correlates neighbouring points, which would flatter the
+     standard error into claiming a precision the scale never had. */
+  let se=null;
+  if(w.length>2){
+    const rx=w.reduce((a,p)=>a+p.i,0)/w.length, ry=w.reduce((a,p)=>a+p.v,0)/w.length;
+    let rn=0, rd=0;
+    w.forEach(p=>{ rn+=(p.i-rx)*(p.v-ry); rd+=(p.i-rx)*(p.i-rx); });
+    if(rd>0){
+      const b=rn/rd, a=ry-b*rx;
+      let sse=0; w.forEach(p=>{ const e=p.v-(a+b*p.i); sse+=e*e; });
+      se=Math.sqrt((sse/(w.length-2))/rd);
+    }
+  }
+  return {slope:num/den, span, points:n, se};
 }
 /* {kcal, source:'measured'|'formula'|'bodyweight', days, span, trend} or null. */
 /* `asOf` defaults to YESTERDAY: today is still being logged, and averaging a
@@ -1972,8 +2140,20 @@ function estimateTDEE(asOf){
     const lo=bw!=null?Math.max(1200,Math.round(bw*7)):1200;
     const hi=bw!=null?Math.round(bw*24):6000;
     if(kcal>=lo && kcal<=hi){
+      /* Two independent sources of doubt, added in quadrature: how firm the
+         weight trend is, and how much the intake itself bounced. Reported as
+         one standard error — roughly the band the true value sits in two times
+         out of three. Saying "± 140" is the honest version of a number every
+         other app prints bare. */
+      let band=null;
+      if(sl.se!=null){
+        const sd=Math.sqrt(fed.reduce((a,d)=>a+(d.kc-mean)*(d.kc-mean),0)/Math.max(1,fed.length-1));
+        band=Math.round(Math.sqrt(Math.pow(sl.se*KCAL_PER_LB,2) + Math.pow(sd/Math.sqrt(fed.length),2)));
+      }
       return {kcal, source:'measured', days:fed.length, span:sl.span, points:sl.points,
-              trendPerWeek:+(sl.slope*7).toFixed(2), meanIntake:Math.round(mean)};
+              trendPerWeek:+(sl.slope*7).toFixed(2), meanIntake:Math.round(mean),
+              band, window:days.length,
+              skipped:days.filter(d=>d.excluded==='partial').length};
     }
   }
   const f=formulaTDEE();
@@ -2091,6 +2271,7 @@ function render(){
   const dayScoped=['today','lift','fuel','body'].includes(state.tab);
   document.getElementById('topd').textContent=dayScoped?longDayLabel(curKey()):fmtDate();
   renderDayBar(dayScoped);
+  paintStorageAlert();
   let html='';
   if(state.tab==='today') html=viewToday();
   else if(state.tab==='lift') html=viewLift();
@@ -2122,7 +2303,7 @@ function renderDayBar(show){
 function viewToday(){
   const s=dstore(); const t=dayTotals();
   let out='';
-  if(!STORAGE_OK) out+=`<div class="banner">${ic('info')}<div><b>Heads up:</b> saving to this device is blocked in the in-app preview. Open the file in your browser (or add it to your Home Screen) and your data will persist.</div></div>`;
+
   if(!isToday()) out+=`<div class="banner">${ic('calendar')}<div>Viewing <b>${longDayLabel(curKey())}</b> · <span data-act="daytoday" class="lnk">back to today</span></div></div>`;
 
   // Energy — one ring that leads, three macro bars that support it.
@@ -2196,8 +2377,11 @@ function exerciseHistory(name){
     if(!arr) return;
     const sets=arr.filter(st=>st&&(st.w||st.r));
     if(!sets.length) return;
+    /* The session list shows everything that was typed; the numbers that feed
+       the e1RM trend count only what was completed. */
     let bestE=0, bestSet=null, volume=0, reps=0;
     sets.forEach(st=>{
+      if(!st.done) return;
       const w=parseFloat(st.w), r=parseInt(st.r,10);
       if(!isNaN(r)&&r>0){ reps+=r; if(!isNaN(w)&&w>0){ volume+=w*r; const e=w*(1+r/30);
         if(e>bestE){ bestE=e; bestSet=st; } } }
@@ -2970,10 +3154,14 @@ function updateTgtCalc(){ const el=document.getElementById('tgcalc'); if(!el) re
   const p=parseFloat(val('tgp'))||0, c=parseFloat(val('tgc'))||0, f=parseFloat(val('tgf'))||0;
   el.innerHTML=`Those macros add up to <b>${Math.round(p*4+c*4+f*9)}</b> kcal`; }
 function trimN(n){ return (Math.round(n*10)/10).toString(); }
+/* Only completed sets count. A weight typed into a row and never ticked is an
+   intention, not a lift — and before this rule it could crown a record and fire
+   the celebration. `done` is what the tick has always meant to weeklyVolume()
+   and sessionDone(); these two were the outliers. */
 function getPRs(){
   const map={};
   Object.keys(data.dates).forEach(k=>{ const sets=data.dates[k].sets||{};
-    Object.keys(sets).forEach(ex=>{ (sets[ex]||[]).forEach(st=>{ if(!st) return;
+    Object.keys(sets).forEach(ex=>{ (sets[ex]||[]).forEach(st=>{ if(!st||!st.done) return;
       const w=parseFloat(st.w), r=parseInt(st.r,10);
       if(!isNaN(w)&&w>0&&!isNaN(r)&&r>0){ const e=w*(1+r/30); if(!map[ex]||map[ex].type!=='w'||e>map[ex].e) map[ex]={type:'w',w:w,r:r,e:e,date:k}; }
       else if(!isNaN(r)&&r>0){ if(!map[ex]){ map[ex]={type:'bw',r:r,date:k,e:0}; } else if(map[ex].type==='bw'&&r>map[ex].r){ map[ex]={type:'bw',r:r,date:k,e:0}; } }
@@ -2993,7 +3181,7 @@ function viewPRs(){
 }
 function prevBestE(ex){ let best=0; const tk=todayKey();
   Object.keys(data.dates).forEach(k=>{ if(k===tk) return; const arr=(data.dates[k].sets||{})[ex]||[];
-    arr.forEach(st=>{ if(!st) return; const w=parseFloat(st.w),r=parseInt(st.r,10); if(!isNaN(w)&&w>0&&!isNaN(r)&&r>0){ const e=w*(1+r/30); if(e>best) best=e; } }); });
+    arr.forEach(st=>{ if(!st||!st.done) return; const w=parseFloat(st.w),r=parseInt(st.r,10); if(!isNaN(w)&&w>0&&!isNaN(r)&&r>0){ const e=w*(1+r/30); if(e>best) best=e; } }); });
   return best; }
 let toastT=null;
 const TOAST_ICON={good:'check',win:'trophy',err:'info',info:'info'};
@@ -3118,10 +3306,13 @@ function energyCard(){
     : (intake.length? Math.round(intake.reduce((a,d)=>a+d.v,0)/intake.length) : 0);
   const net=mean-est.kcal;
   const measured=est.source==='measured';
+  /* Below about 25 kcal the band is narrower than the rounding on a food label;
+     printing it would claim a precision the ingredients never had. */
+  const band=(measured && est.band>=25)? est.band : 0;
   let out=`<div class="card span2"><div class="card-k"><span>Energy</span>
     <span>${measured?est.days+' logged days':'estimated'}</span></div>
     <div class="ebal">
-      <div class="ebal-i"><div class="ebal-v num">${est.kcal.toLocaleString()}</div><div class="ebal-l">Burned / day</div></div>
+      <div class="ebal-i"><div class="ebal-v num">${est.kcal.toLocaleString()}</div>${band?`<div class="ebal-pm num">± ${band}</div>`:''}<div class="ebal-l">Burned / day</div></div>
       <div class="ebal-i"><div class="ebal-v num">${mean.toLocaleString()}</div><div class="ebal-l">Eaten / day</div></div>
       <div class="ebal-i"><div class="ebal-v num ${net<-40?'delta down':net>40?'delta up':'delta flat'}">${net>0?'+':''}${net.toLocaleString()}</div><div class="ebal-l">Balance</div></div>
     </div>`;
@@ -3131,8 +3322,18 @@ function energyCard(){
     out+=`<div class="legend"><span><i class="swatch" style="background:${MC.kc}"></i>Eaten</span>
       <span><i class="swatch" style="background:var(--t1)"></i>Burned</span></div>`;
   }
+  /* Say which days this was measured from, and which were left out and why.
+     An expenditure number that quietly drops a third of the window is the one
+     thing on this screen a user has no way to check. */
+  let prov='';
+  if(measured){
+    prov=`Measured from <b>${est.days} of the last ${est.window} days</b>`;
+    if(est.skipped) prov+=` — ${est.skipped} ${est.skipped===1?'day was':'days were'} too far under your usual intake to be a whole day's logging, so ${est.skipped===1?'it was':'they were'} left out`;
+    prov+=`, across ${est.points} weigh-ins.`;
+    if(band) prov+=` The <b>± ${band}</b> is how much room your weight trend and day-to-day intake still leave — it tightens as you log.`;
+  }
   out+=`<div class="hint tail">${measured
-    ? `Measured from your own log — what you ate, against what your weight actually did. This is what the adaptive targets are built on.`
+    ? prov+` This is what the adaptive targets are built on.`
     : `Estimated until you have about two weeks of food and weigh-ins logged. After that Physiq measures it from your own data.`}</div>`;
   return out+`</div>`;
 }
@@ -3347,10 +3548,37 @@ function promptSheet(o){
     <div class="errline" id="promptErr"></div>
     <button class="btn green" data-act="confirmyes">${esc(o.confirmLabel||'Save')}</button>`);
 }
+/* What is actually taking up the space, so "export a backup" is not the only
+   advice we can give. Photos are almost always the answer. */
+function storageSheet(){
+  const total=storageChars(), ph=photoChars();
+  let sets=0, log=0, nPhotos=0;
+  Object.keys(data.dates||{}).forEach(k=>{ const d=data.dates[k]||{};
+    sets+=JSON.stringify(d.sets||{}).length; log+=JSON.stringify(d.log||[]).length;
+    nPhotos+=(d.photos||[]).length; });
+  const foods=JSON.stringify(data.foods||[]).length;
+  const other=Math.max(0,total-ph-sets-log-foods);
+  const pct=Math.min(100,Math.round(total/STORAGE_BUDGET*100));
+  const rows=[['Progress photos',ph,nPhotos+(nPhotos===1?' photo':' photos')],
+              ['Workout sets',sets,''],['Food log',log,''],
+              ['Saved foods',foods,(data.foods||[]).length+' items'],['Everything else',other,'']]
+    .filter(r=>r[1]>0).sort((a,b)=>b[1]-a[1]);
+  openSheet(`<h3 id="sheetTitle">Storage</h3>
+    <div class="hint c" style="margin-bottom:var(--sp-4)">Physiq keeps everything on this device. Browsers cap that at roughly ${fmtMB(STORAGE_BUDGET)} — past it, nothing new can save.</div>
+    <div class="setprog"><div class="row"><span class="nm">${fmtMB(total)} used</span><span class="ct"><b>${pct}</b>%</span></div>
+      <div class="bar"><i data-fill="${pct}%" style="width:${pct}%;background:${pct>82?'var(--warn)':'var(--good)'}"></i></div></div>
+    <div class="sets">${rows.map(r=>`<div class="setrow between"><span style="font-weight:600;font-size:var(--fs-sm)">${r[0]}${r[2]?` <span class="hint">· ${r[2]}</span>`:''}</span><span class="hint nowrap num">${fmtMB(r[1])}</span></div>`).join('')}</div>
+    <div class="hint lead" style="margin-top:var(--sp-4)">${ph>total*0.4
+      ? 'Progress photos are the bulk of it. They never leave this device — cloud sync deliberately skips them — so export a backup before deleting any you want to keep.'
+      : 'Exporting a backup regularly is the only way to move this to another device or recover it if the browser clears its storage.'}</div>
+    <button class="btn ghost" data-act="export">${ic('download')} Export a backup</button>`);
+}
 function menuSheet(){
   const row=(act,icon,label,sub,extra,cls)=>`<button class="menurow ${cls||''}" data-act="${act}">${ic(icon)}
     <span class="mr-t">${label}${sub?`<small>${sub}</small>`:''}</span>${extra||`<span class="chev">${ic('chevright')}</span>`}</button>`;
   const vm=data.viewMode||'auto';
+  const used=storageChars(), ph=photoChars(), snap=prevSnapshot();
+  const usedTxt=fmtMB(used)+' of about '+fmtMB(STORAGE_BUDGET)+' used'+(ph>200000?' · '+fmtMB(ph)+' photos':'');
   const lockRows = data.pinHash
     ? row('locknow','lock','Lock now') + row('setpin','lock','Change PIN') + row('rmpin','unlock','Remove PIN lock')
     : row('setpin','lock','Set a PIN lock','Ask for a 4-digit code on open');
@@ -3370,9 +3598,11 @@ function menuSheet(){
     </div>
     <div class="sect-title">Your data</div>
     <div class="menulist">
+      ${row('storage','info','Storage', usedTxt)}
       ${row('exportcsv','sheet','Export to spreadsheet','CSV of every log')}
       ${row('export','download','Export a backup','Everything, as JSON')}
       ${row('import','upload','Import a backup')}
+      ${snap? row('rollback','undo','Undo the last upgrade','Restore the backup taken on '+new Date(snap.at).toLocaleDateString()) : ''}
       ${row('home','star','Add to Home Screen')}
       ${row('reset','trash','Reset all data','This cannot be undone','<span class="chev"></span>','danger')}
     </div>`);
@@ -3569,15 +3799,30 @@ async function supFetch(path,opts,_retry){ opts=opts||{};
   if(r.status===401 && !_retry && sync.refresh){ if(await supRefresh()) return supFetch(path,opts,true); }
   return r; }
 async function supPull(){ const r=await supFetch('/rest/v1/'+SB_ROW+'?select=payload&limit=1',{headers:{'Accept':'application/json'}}); if(!r.ok) throw 0; const a=await r.json(); return (Array.isArray(a)&&a.length&&a[0].payload)?a[0].payload:null; }
-async function supPush(){ if(!sync.userId) return; const body=[{user_id:sync.userId, payload:JSON.parse(syncPayload()), updated_at:new Date().toISOString()}];
+async function supPush(){ if(!sync.userId) return;
+  /* Never overwrite a newer schema with an older build's idea of the data. */
+  if(SCHEMA_AHEAD){ setSyncDot('err'); return; }
+  const body=[{user_id:sync.userId, payload:JSON.parse(syncPayload()), updated_at:new Date().toISOString()}];
   const r=await supFetch('/rest/v1/'+SB_ROW,{method:'POST',headers:{'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(body)}); if(!r.ok) throw 0; }
-function mergeRemote(remote){ if(!remote||typeof remote!=='object') return;
+/* Returns false when it refused the payload. Every caller then does the right
+   thing without knowing why: nothing is merged, and supPush() declines too, so
+   an older build parked on a stale service worker can neither read a newer
+   blob nor overwrite it with its own shorter one. */
+let _aheadTold=false;
+function mergeRemote(remote){ if(!remote||typeof remote!=='object') return false;
+  if(parseInt(remote.v,10)>SCHEMA_V){
+    SCHEMA_AHEAD=true; setSyncDot('err');
+    if(!_aheadTold){ _aheadTold=true;
+      showToast('Sync paused — another device is running a newer version of Physiq. Update this one to continue.','err'); }
+    return false;
+  }
   const rd=remote.dates||{}, ld=data.dates||{}, out={};
   new Set([...Object.keys(ld),...Object.keys(rd)]).forEach(k=>{ const a=ld[k], b=rd[k];
     let pick; if(a&&b){ pick=((b._u||0)>(a._u||0))?Object.assign({},b):Object.assign({},a); } else pick=Object.assign({}, a||b);
     if(a&&a.photos) pick.photos=a.photos; out[k]=pick; });
   data.dates=out;
-  if((remote.updatedAt||0)>(data.updatedAt||0)){ ['unit','restDefault','deloadWeeks','blockStart','pinHash','lockSkipped','foods','rotationPos','rotationByPhase','phase','phaseTargets','phaseMode','focus','presetsRemoved','mealsV3','profile','onboarded'].forEach(f=>{ if(remote[f]!==undefined) data[f]=remote[f]; }); data.updatedAt=remote.updatedAt; }
+  if((remote.updatedAt||0)>(data.updatedAt||0)){ SYNC_FIELDS.forEach(f=>{ if(remote[f]!==undefined) data[f]=remote[f]; }); data.updatedAt=remote.updatedAt; }
+  return true;
 }
 let pushTimer=null;
 function schedulePush(){ if(!sync.enabled) return; setSyncDot('sync'); clearTimeout(pushTimer); pushTimer=setTimeout(async()=>{ try{ await supPush(); sync.last=nowMs(); saveSync(); setSyncDot('ok'); }catch(e){ setSyncDot('err'); } }, 1600); }
@@ -3770,10 +4015,18 @@ document.addEventListener('click', e=>{
     document.getElementById('toast').classList.remove('on'); if(fn) fn(); }
   else if(a==='confirmyes'){ const fn=_confirmFn; if(fn && fn()===false) return; _confirmFn=null; _sheetSnapshot=null; }
   else if(a==='export'){ exportData(); }
+  else if(a==='storage'){ storageSheet(); }
+  else if(a==='rollback'){ const snap=prevSnapshot(); if(!snap) return;
+    confirmSheet({title:'Undo the last upgrade?', body:'This replaces everything currently in the app with the backup taken automatically on '+new Date(snap.at).toLocaleString()+', just before the last version upgrade. Anything logged since then is lost.',
+      confirmLabel:'Restore that backup', onYes:()=>{
+        try{ const blob=JSON.parse(snap.blob); if(!blob||!blob.dates) throw 0;
+          localStorage.setItem(KEY, snap.blob); localStorage.removeItem(PREV_KEY);
+          location.reload();
+        }catch(e){ showToast('That backup could not be read','err'); } } }); }
   else if(a==='import'){ document.getElementById('importInput').click(); }
   else if(a==='home'){ homeSheet(); }
   else if(a==='reset'){ confirmSheet({title:'Erase everything?', body:'Every workout, weigh-in, photo and food entry on this device will be deleted. This cannot be undone — export a backup first if you want one.',
-      confirmLabel:'Erase all data', onYes:()=>{ data={v:1,unit:data.unit,restDefault:data.restDefault||120,dates:{}}; ensureDefaults(); touchSettings(); save(); closeSheet(); render(); showToast('All data erased'); } }); }
+      confirmLabel:'Erase all data', onYes:()=>{ data={v:SCHEMA_V,unit:data.unit,restDefault:data.restDefault||120,dates:{}}; ensureDefaults(); touchSettings(); save(); closeSheet(); render(); showToast('All data erased'); } }); }
   else if(a==='onbunit'){ onbSave(); onb.unit=el.dataset.v; renderOnboard(); }
   else if(a==='onbsex'){ onbSave(); onb.sex=el.dataset.v; renderOnboard(); }
   else if(a==='onbphase'){ onb.phase=el.dataset.v; renderOnboard(); }
@@ -3894,7 +4147,12 @@ document.getElementById('photoInput').addEventListener('change', function(){
     const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
     cv.getContext('2d').drawImage(img,0,0,w,h); URL.revokeObjectURL(url);
     let d; try{ d=cv.toDataURL('image/jpeg',0.72); }catch(err){ d=null; }
-    if(d){ const st=dstore(); (st.photos=st.photos||[]).push(d); try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(err){ showToast('Photo added, but device storage is full — export a backup to keep it','err'); } render(); }
+    if(d){ const st=dstore(); (st.photos=st.photos||[]).push(d);
+      try{ localStorage.setItem(KEY, JSON.stringify(data)); STORAGE_OK=true; STORAGE_ERR=null; lastSaveOk=nowMs(); }
+      catch(err){ /* Roll the photo back out rather than show it as saved. */
+        st.photos.pop(); noteStorageError(err);
+        showToast('No room for that photo — this device is out of storage','err'); }
+      render(); }
   };
   img.src=url; this.value='';
 });
@@ -3935,10 +4193,10 @@ document.getElementById('lockLink').addEventListener('click', ()=>{
   if(lockMode==='create'){ data.lockSkipped=true; touchSettings(); save(); hideLock(); }
   else if(lockMode==='confirm'){ buf=''; firstPin=''; lockMode='create'; renderLock(); }
   else { confirmSheet({overLock:true, title:'Forgot your code?', body:'The PIN cannot be recovered. Clearing it erases the log stored on this device so you can set a new code — if you have an exported backup, you can restore it afterwards.',
-      confirmLabel:'Erase and set a new PIN', onYes:()=>{ data={v:1,unit:data.unit||'lb',restDefault:data.restDefault||120,dates:{}}; ensureDefaults(); save();
+      confirmLabel:'Erase and set a new PIN', onYes:()=>{ data={v:SCHEMA_V,unit:data.unit||'lb',restDefault:data.restDefault||120,dates:{}}; ensureDefaults(); save();
         buf=''; firstPin=''; lockMode='create'; closeSheet(); renderLock(); } }); }
 });
-applyViewMode(); ensureDefaults(); applyPhase(); state.liftDay=getRot(); render();
+applyViewMode(); runMigrations(); ensureDefaults(); auditSchema(); applyPhase(); state.liftDay=getRot(); render();
 if(data.onboarded) initLock(); else startOnboarding(); if(sync.enabled) setSyncDot('ok'); startupSync();
 window.addEventListener('resize', ()=>{ if((data.viewMode||'auto')==='auto') applyViewMode(); });
 /* Offline shell. Only meaningful when served over http(s); opening the file
