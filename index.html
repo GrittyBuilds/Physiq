@@ -319,6 +319,9 @@
     border-top:1px solid color-mix(in srgb, var(--warn) 40%, transparent)}
   .salert.bad{background:color-mix(in srgb, var(--bad) 15%, var(--s1));
     border-top-color:color-mix(in srgb, var(--bad) 45%, transparent)}
+  /* `display:flex` outranks the UA's [hidden] rule, so the guard is required —
+     without it the alert renders as an empty amber strip at all times. */
+  .salert[hidden]{display:none}
   .salert .ic{width:17px;height:17px;flex:none;margin-top:1px}
   .salert b{font-weight:700}
   .salert .lnk{white-space:nowrap}
@@ -363,6 +366,44 @@
   .rowbtn::after{content:"";position:absolute;inset:-5px}     /* 44px hit area */
   .rowbtn .ic{width:16px;height:16px}
   .rowbtn:hover{background:var(--s3);color:var(--t1);border-color:var(--line-2)}
+  .rowbtn.danger{color:var(--bad)}
+  .rowbtn.danger:hover{background:var(--bad-soft);border-color:rgba(240,101,94,.28)}
+  .rowbtn[disabled]{opacity:.35;pointer-events:none}
+  /* Go-tos: the fastest path in the app, so it sits above the Add button and
+     reads as a shelf of things rather than a list of choices to weigh up. */
+  .gotos{margin-bottom:var(--sp-3)}
+  .goto-h{font-size:var(--fs-cap);text-transform:uppercase;letter-spacing:.07em;
+    color:var(--t3);font-weight:700;margin:0 var(--sp-1) var(--sp-2)}
+  .gochips{display:flex;gap:var(--sp-2);overflow-x:auto;overscroll-behavior-x:contain;
+    scrollbar-width:none;padding:2px var(--sp-1) 4px;scroll-snap-type:x proximity}
+  .gochips::-webkit-scrollbar{display:none}
+  .gochip{flex:none;scroll-snap-align:start;display:flex;flex-direction:column;align-items:flex-start;
+    gap:2px;max-width:190px;padding:9px 13px;min-height:52px;justify-content:center;
+    background:var(--s2);border:1px solid var(--line);border-radius:var(--r-md);
+    color:var(--t1);cursor:pointer;text-align:left;
+    transition:background var(--d-2) var(--ease),border-color var(--d-2) var(--ease),transform var(--d-2) var(--ease)}
+  .gochip:hover{background:var(--s3);border-color:var(--line-2)}
+  .gochip:active{transform:scale(.97)}
+  .gochip .gn{font-size:var(--fs-sm);font-weight:650;line-height:1.25;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:164px}
+  .gochip .gk{font-size:var(--fs-cap);color:var(--t3);font-weight:650}
+  .gochip .gk::after{content:' kcal'}
+  .meallist{display:flex;flex-direction:column;gap:var(--sp-2)}
+  .mealrow{display:flex;align-items:center;gap:var(--sp-2)}
+  .mealrow .field{min-height:42px}
+  /* One red icon in a food row reads as "delete this". Six stacked down the
+     side of an editor reads as a hazard warning about the whole screen, so
+     here the danger colour arrives on intent rather than at rest. */
+  .mealrow .rowbtn.danger{color:var(--t3)}
+  .mealrow .rowbtn.danger:hover,.mealrow .rowbtn.danger:focus-visible{color:var(--bad)}
+  .mealrow .grow{flex:1 1 auto;min-width:0}
+  select.mealhr{flex:0 0 78px;width:78px;padding:9px 4px;text-align:center;
+    font-family:var(--f-num);font-variant-numeric:tabular-nums}
+  @media (max-width:380px){
+    .mealrow{gap:5px}
+    select.mealhr{flex-basis:66px;width:66px}
+    .mealrow .rowbtn{width:30px;height:30px}
+  }
   .rowbtn:active{transform:scale(.92)}
   .rowbtn.accent{border-color:var(--sel-line);background:var(--sel);color:var(--t1)}
   .rowbtn.accent:hover{background:var(--sel-strong);color:var(--t1)}
@@ -1871,7 +1912,7 @@ let SCHEMA_AHEAD = false;   /* stored blob is newer than this build understands 
    (a per-device display preference — a phone should not inherit a desktop's). */
 const SYNC_FIELDS = ['unit','restDefault','deloadWeeks','blockStart','pinHash','lockSkipped',
   'foods','rotationPos','rotationByPhase','phase','phaseTargets','phaseMode','focus',
-  'presetsRemoved','mealsV3','migratedFood','profile','onboarded','logRIR'];
+  'presetsRemoved','mealsV3','migratedFood','profile','onboarded','logRIR','meals'];
 const SYNC_EXEMPT = ['v','dates','updatedAt','viewMode'];
 function auditSchema(){
   const unknown=Object.keys(data).filter(k=>SYNC_FIELDS.indexOf(k)<0 && SYNC_EXEMPT.indexOf(k)<0);
@@ -2002,7 +2043,7 @@ function persistLocal(){ try{ localStorage.setItem(KEY, JSON.stringify(data)); S
 function touch(k){ k=k||curKey(); const s=dstore(k); s._u=nowMs(); }
 function touchSettings(){ data.updatedAt=nowMs(); }
 /* ---------------- STATE ---------------- */
-const state = { tab:'today', liftDay: 0, statsView:'week', day: todayKey(), fuelEnergy:'remaining', fuelMeal:null, sheetMeal:'snacks', foodQuery:'', foodCtx:'log' };
+const state = { tab:'today', liftDay: 0, statsView:'week', day: todayKey(), fuelEnergy:'remaining', fuelMeal:null, sheetMeal:null, foodQuery:'', foodCtx:'log' };
 /* Currently-viewed day (defaults to today). Day-scoped views/edits operate on this. */
 function curKey(){ return state.day||todayKey(); }
 function isToday(){ return curKey()===todayKey(); }
@@ -2603,14 +2644,80 @@ function setSwap(orig,newName){ const s=dstore(); s.swaps=s.swaps||{};
   touch(); save(); closeSheet(); render();
 }
 /* Meals for the food log. defaultMeal picks by time of day when adding. */
-const MEALS=[{id:'pre',name:'Pre-Workout'},{id:'post',name:'Post-Workout'},{id:'lunch',name:'Lunch'},{id:'dinner',name:'Dinner'},{id:'snacks',name:'Snacks'}];
-function mealName(id){ const m=MEALS.find(x=>x.id===id); return m?m.name:'Snacks'; }
+/* MEALS ARE USER DATA. The default set keeps every id the app has ever
+   written, so existing log entries keep resolving, and adds the Breakfast
+   whose absence was the first thing anyone noticed. `h` is the hour the meal
+   starts, which is what decides where a new entry lands — a ladder the user
+   can now move rather than one hardcoded into a function.
+   Nothing is persisted until the user edits it; mealList() falls back. */
+const MEALS_DEFAULT=[
+  {id:'breakfast', name:'Breakfast',    h:4},
+  {id:'pre',       name:'Pre-Workout',  h:9},
+  {id:'lunch',     name:'Lunch',        h:12},
+  {id:'post',      name:'Post-Workout', h:15},
+  {id:'dinner',    name:'Dinner',       h:18},
+  {id:'snacks',    name:'Snacks',       h:21},
+];
+function mealList(){
+  const m=data&&data.meals;
+  return (Array.isArray(m)&&m.length&&m.every(x=>x&&x.id&&x.name)) ? m : MEALS_DEFAULT;
+}
+/* Where an entry goes when its own meal no longer exists. The last meal of the
+   day is the catch-all the app has always used, just no longer spelled
+   'snacks' in six unrelated places. */
+function fallbackMealId(){ const L=mealList(); return L[L.length-1].id; }
+function mealName(id){ const L=mealList(); const m=L.find(x=>x.id===id); return (m||L[L.length-1]).name; }
+function hourLabel(h){ h=((+h)%24+24)%24;
+  const ap=h<12?'am':'pm', d=h%12===0?12:h%12; return d+ap; }
+/* Meals the user owns: rename, reorder, restart at a different hour, add, or
+   remove. Deleting one never orphans what was logged into it. */
+function mealsSheet(){
+  const L=mealList();
+  const hours=Array.from({length:24},(_,h)=>h);
+  const rows=L.map((m,i)=>`<div class="mealrow">
+      <input class="field grow" value="${esc(m.name)}" data-in="mealname" data-i="${i}" aria-label="Meal ${i+1} name" maxlength="24">
+      <select class="field mealhr" data-in="mealhour" data-i="${i}" aria-label="${esc(m.name)} starts at">
+        ${hours.map(h=>`<option value="${h}" ${(+m.h||0)===h?'selected':''}>${hourLabel(h)}</option>`).join('')}
+      </select>
+      <button class="rowbtn" data-act="mealup" data-i="${i}" ${i===0?'disabled':''} aria-label="Move ${esc(m.name)} earlier">${ic('chevleft')}</button>
+      <button class="rowbtn" data-act="mealdown" data-i="${i}" ${i===L.length-1?'disabled':''} aria-label="Move ${esc(m.name)} later">${ic('chevright')}</button>
+      <button class="rowbtn danger" data-act="mealdel" data-i="${i}" ${L.length<2?'disabled':''} aria-label="Delete ${esc(m.name)}">${ic('trash')}</button>
+    </div>`).join('');
+  openSheet(`<h3 id="sheetTitle">Meals</h3>
+    <div class="hint c" style="margin-bottom:var(--sp-4)">Name them however you eat. The hour decides where a new entry lands when you log without picking a meal — the last meal that has already started wins.</div>
+    <div class="meallist">${rows}</div>
+    <div class="inline" style="margin-top:var(--sp-3)">
+      <button class="btn ghost grow" data-act="mealadd">${ic('plus')} Add a meal</button>
+      ${data.meals?`<button class="btn ghost auto" data-act="mealsreset">${ic('undo')} Reset</button>`:''}
+    </div>`);
+}
+function mealsWrite(next){
+  /* Only persist once it differs from the default — an untouched install keeps
+     inheriting future default changes instead of freezing today's list. */
+  data.meals=next.map(m=>({id:m.id,name:m.name,h:+m.h||0}));
+  touchSettings(); save();
+}
+function mealUsage(id){ let n=0;
+  Object.keys(data.dates||{}).forEach(k=>{ ((data.dates[k]||{}).log||[]).forEach(e=>{ if(e&&e.meal===id) n++; }); });
+  return n; }
+function reassignMeal(from,to){
+  Object.keys(data.dates||{}).forEach(k=>{ let hit=false;
+    ((data.dates[k]||{}).log||[]).forEach(e=>{ if(e&&e.meal===from){ e.meal=to; hit=true; } });
+    if(hit) touch(k); });
+}
 /* An entry's meal, normalised — legacy rows can carry an id we no longer use. */
-function mealOf(e){ return (e && MEALS.some(m=>m.id===e.meal)) ? e.meal : 'snacks'; }
+function mealOf(e){ return (e && mealList().some(m=>m.id===e.meal)) ? e.meal : fallbackMealId(); }
 function entryKc(e){ return (+e.p||0)*4 + (+e.c||0)*4 + (+e.f||0)*9; }
-function defaultMeal(){ const h=new Date().getHours(); if(h<10) return 'pre'; if(h<14) return 'lunch'; if(h<17) return 'post'; if(h<21) return 'dinner'; return 'snacks'; }
+/* The last meal that has already started. Before the first one (small hours),
+   the day has not begun — that food belongs to breakfast, not to last night. */
+function defaultMeal(){
+  const h=new Date().getHours(), L=mealList();
+  let pick=L[0];
+  L.forEach(m=>{ if((m.h!=null?m.h:0)<=h) pick=m; });
+  return pick.id;
+}
 function mealSeg(sel){ return `<div class="seg sm scroll mealseg" role="group" aria-label="Meal">`
-  +MEALS.map(m=>`<button class="${m.id===sel?'on':''}" data-act="pickmeal" data-m="${m.id}" aria-pressed="${m.id===sel}">${m.name}</button>`).join('')+`</div>`; }
+  +mealList().map(m=>`<button class="${m.id===sel?'on':''}" data-act="pickmeal" data-m="${m.id}" aria-pressed="${m.id===sel}">${esc(m.name)}</button>`).join('')+`</div>`; }
 /* Energy + macro-bar summary with a Remaining/Eaten toggle. */
 function fuelSummary(t){
   const mode=state.fuelEnergy||'remaining';
@@ -2637,15 +2744,64 @@ function fuelSummary(t){
       ${macroRow('Fat',t.f,TARGET.f,MC.f)}
     </div></div>`;
 }
+/* GO-TOS. Bodybuilders eat the same handful of things on repeat, and the app
+   already knows which — it just never asked itself. Built from the log rather
+   than the saved-food list, so a quick-add or a copied entry is just as
+   repeatable as a saved food, and the macros come back exactly as they were
+   last logged (portion and all) instead of at some canonical serving.
+
+   Scored by how often a thing lands in THIS meal, decayed by how long ago —
+   half-weight at three weeks — so last month's cutting staples fade out of the
+   way of this month's without anyone having to curate a list. */
+const GOTO_DAYS=90, GOTO_HALFLIFE=21, GOTO_STALE=28;
+function goTos(mealId, limit){
+  const end=curKey(); const seen=Object.create(null);
+  for(let i=0;i<GOTO_DAYS;i++){
+    const k=addDays(end,-i), d=data.dates[k]; if(!d||!d.log) continue;
+    d.log.forEach(e=>{
+      if(!e || mealOf(e)!==mealId) return;
+      const nm=String(e.name||'').trim(); if(!nm) return;
+      const key=nm.toLowerCase()+'|'+(e.det||'');
+      const w=Math.pow(0.5, i/GOTO_HALFLIFE);
+      const cur=seen[key];
+      if(cur){ cur.score+=w; cur.n++; }
+      /* The first time we meet a key we are walking backwards from today, so
+         this entry is also the most recent one — that is the template. */
+      else seen[key]={score:w, n:1, days:i,
+        e:{name:nm, p:+e.p||0, c:+e.c||0, f:+e.f||0, det:e.det||''}};
+    });
+  }
+  return Object.keys(seen).map(k=>seen[k])
+    /* Two different disqualifications: a single entry is not yet a habit, and
+       anything you have not eaten in a month is no longer a usual — however
+       often you used to eat it. Decay alone would let a former staple sit at
+       the top of the strip for a whole cut. */
+    .filter(x=>(x.n>1 || x.days<=14) && x.days<=GOTO_STALE)
+    .sort((a,b)=>b.score-a.score)
+    .slice(0, limit||6);
+}
+function goToStrip(mealId, compact){
+  const list=goTos(mealId, compact?8:6);
+  if(!list.length) return '';
+  /* The whole entry rides in the attribute rather than an index into a list the
+     handler would have to rebuild identically. */
+  const chips=list.map(g=>`<button class="gochip" data-act="gotolog" data-m="${mealId}" data-g="${enc(JSON.stringify(g.e))}"
+      aria-label="Log ${esc(g.e.name)}${g.e.det?' · '+esc(g.e.det):''}, ${entryKc(g.e)} calories, to ${esc(mealName(mealId))}">
+      <span class="gn">${esc(g.e.name)}</span><span class="gk num">${entryKc(g.e)}</span></button>`).join('');
+  return `<div class="gotos">
+    <div class="goto-h">Usual for ${esc(mealName(mealId))}</div>
+    <div class="gochips scroll">${chips}</div></div>`;
+}
 function viewFuel(){
   const s=dstore(); const t=dayTotals(); const log=s.log||[];
   let out=fuelSummary(t);
+  out+=goToStrip(state.fuelMeal||defaultMeal());
   out+=`<button class="btn" data-act="addfood">${ic('plus')} Add food</button>`;
   out+=`<div class="mealgrid">`;
-  const buckets={}; MEALS.forEach(m=>buckets[m.id]=[]);
+  const buckets={}; mealList().forEach(m=>buckets[m.id]=[]);
   log.forEach((e,i)=>{ buckets[mealOf(e)].push({e,i}); });
   const anyLogged=log.length>0;
-  MEALS.forEach(m=>{ const items=buckets[m.id];
+  mealList().forEach(m=>{ const items=buckets[m.id];
     const sub=items.reduce((a,x)=>a+entryKc(x.e),0);
     out+=`<div class="mealsec"><div class="meal-h"><div class="meal-nm">${m.name}${items.length?` <span class="meal-ct">${items.length}</span>`:''}</div>
       <div class="meal-r"><span class="meal-sub">${items.length?sub.toLocaleString()+' kcal':''}</span>
@@ -2776,6 +2932,7 @@ function logSheet(){
   state.sheetMeal=state.fuelMeal||defaultMeal(); state.foodQuery=''; state.foodCtx='log';
   openSheet(`<h3 id="sheetTitle">Add food</h3>
     ${mealSeg(state.sheetMeal)}
+    <div id="gotobox">${goToStrip(state.sheetMeal, true)}</div>
     <div class="searchrow">
       <div class="searchwrap">${ic('search')}
         <input class="field" id="foodq" placeholder="Search foods" autocomplete="off" data-in="foodsearch"
@@ -2933,7 +3090,7 @@ function barcodeUnsupported(){ openSheet(`<h3 id="sheetTitle">Barcode scanning</
   <button class="btn green" data-act="createfood">${ic('plus')} Create food manually</button>`); }
 /* Edit an already-logged entry in place. */
 function editLogSheet(i){ const s=dstore(); const e=(s.log||[])[i]; if(!e) return;
-  state.sheetMeal=(e.meal&&MEALS.some(m=>m.id===e.meal))?e.meal:'snacks';
+  state.sheetMeal=mealOf(e);
   openSheet(`<h3 id="sheetTitle">Edit food</h3>
     ${mealSeg(state.sheetMeal)}
     <input class="field" id="edname" placeholder="Food name" autocomplete="off" value="${esc(e.name||'')}" aria-label="Food name">
@@ -2972,14 +3129,14 @@ function copySheet(src){
     <div class="hint c" style="margin-bottom:var(--sp-4)">${summary}</div>
     <div class="sect-title" style="margin-top:0">Copy to</div>
     <div class="foodchips" role="group" aria-label="Destination meals" style="margin-bottom:var(--sp-4)">${
-      MEALS.map(m=>`<button class="foodchip" data-act="copypick" data-m="${m.id}" aria-pressed="false">${m.name}${m.id===from?' again':''}</button>`).join('')}</div>
+      mealList().map(m=>`<button class="foodchip" data-act="copypick" data-m="${m.id}" aria-pressed="false">${esc(m.name)}${m.id===from?' again':''}</button>`).join('')}</div>
     <button class="btn green" data-act="copydo" disabled>${ic('copy')} Copy</button>
     <div class="hint c" id="copyHint" style="margin-top:var(--sp-2)">Pick one or more meals.</div>`);
 }
 /* The mirror image, offered from an empty meal: pull an earlier meal into it. */
 function copyIntoSheet(dest){
   const log=dstore().log||[];
-  const groups=MEALS.filter(m=>m.id!==dest)
+  const groups=mealList().filter(m=>m.id!==dest)
     .map(m=>({m, items:log.filter(e=>mealOf(e)===m.id)}))
     .filter(g=>g.items.length);
   if(!groups.length){ showToast('Nothing logged yet today','err'); return; }
@@ -3667,7 +3824,8 @@ function menuSheet(){
     <div class="menulist">${row('togglerir','dumbbell','Log RIR on every set','Reps left in reserve, next to the reps box',
       data.logRIR?'<span class="badge">On</span>':'<span class="chev">'+ic('chevright')+'</span>')}</div>
     <div class="sect-title">Food</div>
-    <div class="menulist">${row('myfoods','plate','My foods',(data.foods||[]).length+' saved')}</div>
+    <div class="menulist">${row('myfoods','plate','My foods',(data.foods||[]).length+' saved')}
+      ${row('meals','timer','Meals', mealList().map(m=>m.name).join(' · '))}</div>
     <div class="sect-title">Sync &amp; security</div>
     <div class="menulist">
       ${row('syncsetup','cloud','Cloud sync', sync.enabled?('Last synced '+(sync.last?timeAgo(sync.last):'not yet')):'Not set up',
@@ -4037,7 +4195,14 @@ document.addEventListener('click', e=>{
   else if(a==='addfood'){ state.fuelMeal=null; logSheet(); }
   else if(a==='quicklog'){ state.sheetMeal=state.fuelMeal||defaultMeal(); foodDetailSheet(el.dataset.id); }
   else if(a==='addmeal'){ state.fuelMeal=el.dataset.m; logSheet(); }
-  else if(a==='pickmeal'){ state.sheetMeal=el.dataset.m; document.querySelectorAll('.mealseg button').forEach(b=>b.classList.toggle('on', b.dataset.m===state.sheetMeal)); }
+  else if(a==='pickmeal'){ state.sheetMeal=el.dataset.m;
+    document.querySelectorAll('.mealseg button').forEach(b=>{
+      const on=b.dataset.m===state.sheetMeal;
+      b.classList.toggle('on',on);
+      b.setAttribute('aria-pressed', on?'true':'false');   /* the group is a toggle set; it has to say so */
+    });
+    const gb=document.getElementById('gotobox');
+    if(gb) gb.innerHTML=goToStrip(state.sheetMeal, true); }
   else if(a==='fuelmode'){ state.fuelEnergy=el.dataset.m; render(); }
   else if(a==='fooddetail'){ foodDetailSheet(el.dataset.id); }
   else if(a==='createfood'){ foodFormSheet(); }
@@ -4064,14 +4229,14 @@ document.addEventListener('click', e=>{
         if(state.foodCtx==='myfoods') myFoodsSheet(); else if(document.getElementById('foodresults')){ closeSheet(); }
         else { closeSheet(); } render(); showToast('Food deleted','good'); } }); }
   else if(a==='logfood'){ const name=val('fdname').trim(); const serv=val('fdserv').trim(); const p=+val('fdp')||0,c=+val('fdc')||0,f=+val('fdf')||0; const av=parseFloat(val('fdamt')); const amt=(isNaN(av)||av<=0)?1:av; if(!name&&!p&&!c&&!f) return;
-    const s=dstore(); const entry={name:name||'Food',p:Math.round(p*amt),c:Math.round(c*amt),f:Math.round(f*amt),meal:state.sheetMeal||'snacks'};
+    const s=dstore(); const entry={name:name||'Food',p:Math.round(p*amt),c:Math.round(c*amt),f:Math.round(f*amt),meal:state.sheetMeal||defaultMeal()};
     if(serv||amt!==1) entry.det=fmtAmt(amt)+' × '+(serv||('serving'+(amt===1?'':'s')));
     (s.log=s.log||[]).push(entry);
     const chk=document.getElementById('fdsave'); if(name&&chk&&chk.checked){ const ex=(data.foods||[]).find(x=>(x.name||'').toLowerCase()===name.toLowerCase());
       if(ex){ ex.p=p; ex.c=c; ex.f=f; ex.serv=serv; ex.used=nowMs(); } else (data.foods=data.foods||[]).push({id:'f'+nowMs().toString(36)+Math.floor(Math.random()*10000),name,p,c,f,serv,used:nowMs()}); touchSettings(); }
     state.fuelMeal=null; touch(); save(); closeSheet(); render(); checkTargets(); }
   else if(a==='logqty'){ const f=(data.foods||[]).find(x=>x.id===el.dataset.id); if(!f) return; const av=parseFloat(val('qtyamt')); const amt=(isNaN(av)||av<=0)?1:av;
-    const s=dstore(); const entry={name:f.name,p:Math.round((+f.p||0)*amt),c:Math.round((+f.c||0)*amt),f:Math.round((+f.f||0)*amt),meal:state.sheetMeal||'snacks'};
+    const s=dstore(); const entry={name:f.name,p:Math.round((+f.p||0)*amt),c:Math.round((+f.c||0)*amt),f:Math.round((+f.f||0)*amt),meal:state.sheetMeal||defaultMeal()};
     if(f.serv||amt!==1) entry.det=fmtAmt(amt)+' × '+(f.serv||('serving'+(amt===1?'':'s')));
     (s.log=s.log||[]).push(entry); f.used=nowMs(); state.fuelMeal=null; touch(); touchSettings(); save(); closeSheet(); render();
     showToast('Logged '+f.name+' to '+mealName(entry.meal),'good'); checkTargets(); }
@@ -4116,7 +4281,41 @@ document.addEventListener('click', e=>{
     document.getElementById('toast').classList.remove('on'); if(fn) fn(); }
   else if(a==='confirmyes'){ const fn=_confirmFn; if(fn && fn()===false) return; _confirmFn=null; _sheetSnapshot=null; }
   else if(a==='export'){ exportData(); }
+  else if(a==='gotolog'){ let g; try{ g=JSON.parse(dec(el.dataset.g)); }catch(err){ return; }
+    const m=el.dataset.m;
+    const s=dstore(); const entry={name:g.name,p:g.p,c:g.c,f:g.f,meal:m};
+    if(g.det) entry.det=g.det;
+    (s.log=s.log||[]).push(entry);
+    touch(); save(); haptic('done'); render();
+    offerUndo('Logged '+entry.name+' to '+mealName(m), ()=>{
+      /* Remove that exact object, not the last row — the user may have logged
+         something else in the five seconds the toast was up. */
+      const arr=dstore().log||[]; const at=arr.indexOf(entry);
+      if(at>=0){ arr.splice(at,1); touch(); save(); render(); } });
+    checkTargets(); }
   else if(a==='storage'){ storageSheet(); }
+  else if(a==='meals'){ mealsSheet(); }
+  else if(a==='mealadd'){ const L=mealList().slice();
+    const last=L[L.length-1];
+    L.push({id:'m'+nowMs().toString(36), name:'New meal', h:Math.min(23,(+last.h||0)+1)});
+    mealsWrite(L); mealsSheet(); }
+  else if(a==='mealup'||a==='mealdown'){ const i=+el.dataset.i, j=a==='mealup'?i-1:i+1;
+    const L=mealList().slice(); if(j<0||j>=L.length) return;
+    const t=L[i]; L[i]=L[j]; L[j]=t; mealsWrite(L); mealsSheet(); }
+  else if(a==='mealdel'){ const i=+el.dataset.i; const L=mealList().slice(); if(L.length<2) return;
+    const gone=L[i], used=mealUsage(gone.id);
+    const to=(L[i-1]||L[i+1]).id, toName=(L[i-1]||L[i+1]).name;
+    const finish=()=>{ if(used) reassignMeal(gone.id,to); L.splice(i,1); mealsWrite(L); mealsSheet(); render(); };
+    if(used) confirmSheet({title:'Delete '+gone.name+'?',
+      body:used+' logged '+(used===1?'entry is':'entries are')+' in '+gone.name+'. '+(used===1?'It':'They')+' will move to '+toName+' — nothing is lost.',
+      confirmLabel:'Delete and move', onYes:finish});
+    else finish(); }
+  else if(a==='mealsreset'){ confirmSheet({title:'Reset meals?',
+      body:'This puts the default set back. Anything logged into a meal you added moves to the last meal of the day.',
+      confirmLabel:'Reset', onYes:()=>{
+        const valid=MEALS_DEFAULT.map(m=>m.id);
+        mealList().forEach(m=>{ if(valid.indexOf(m.id)<0 && mealUsage(m.id)) reassignMeal(m.id, MEALS_DEFAULT[MEALS_DEFAULT.length-1].id); });
+        delete data.meals; touchSettings(); save(); mealsSheet(); render(); } }); }
   else if(a==='rollback'){ const snap=prevSnapshot(); if(!snap) return;
     confirmSheet({title:'Undo the last upgrade?', body:'This replaces everything currently in the app with the backup taken automatically on '+new Date(snap.at).toLocaleString()+', just before the last version upgrade. Anything logged since then is lost.',
       confirmLabel:'Restore that backup', onYes:()=>{
@@ -4169,6 +4368,11 @@ document.addEventListener('input', e=>{
     scheduleFoodSearch(el.value); return; }
   const s=dstore();
   if(a==='setw'||a==='setr'){ const ex=dec(el.dataset.ex),i=+el.dataset.i; const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{}; arr[i][a==='setw'?'w':'r']=el.value; touch(); save(); }
+  if(a==='mealname'||a==='mealhour'){ const i=+el.dataset.i; const L=mealList().slice();
+    if(!L[i]) return;
+    if(a==='mealname'){ const v=el.value.trim(); L[i]=Object.assign({},L[i],{name:v||L[i].name}); }
+    else L[i]=Object.assign({},L[i],{h:Math.max(0,Math.min(23,parseInt(el.value,10)||0))});
+    mealsWrite(L); return; }
   if(a==='setrir'){ const ex=dec(el.dataset.ex),i=+el.dataset.i; const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{};
     const v=parseFloat(el.value);
     if(el.value===''||isNaN(v)) delete arr[i].rir; else arr[i].rir=Math.max(0,Math.min(10,v));
