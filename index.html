@@ -2955,8 +2955,14 @@ function suggestWeight(ex, ls){
    that guard: modes 'log' and 'none' never set it, so a keystroke on an old
    date can never stamp today's program onto it. */
 let LIVE=null;
+/* Is this date one the app is allowed to plan against at all? Deliberately
+   re-derived rather than trusted from LIVE: LIVE is refreshed as a side effect
+   of rendering the Lift tab, so relying on it alone would make the safety
+   property depend on render ordering. Both must hold. */
+function plannableDate(k){ return k===todayKey() || state.planned===k; }
 function ensureSession(k){
   if(!LIVE || LIVE.k!==k) return;          /* THE guard. Do not weaken it. */
+  if(!plannableDate(k)){ LIVE=null; return; }
   const s=dstore(k);
   const ex=LIVE.ex.slice();
   /* Anything logged on this date that the plan does not contain is part of the
@@ -2994,6 +3000,7 @@ function liftPlan(k){
   const keys=loggedKeys(s);
 
   if(!planning && s.sn && Array.isArray(s.sn.ex) && s.sn.ex.length){
+    /* Reading, not planning: drop any stale pointer before rendering. */
     const day=findProgramDay(s.sn.p, s.sn.d);
     const specs=s.sn.ex.map((n,idx)=>{
       const slot=day? slotByName(day,n) : null;
