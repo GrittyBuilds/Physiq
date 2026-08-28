@@ -388,6 +388,20 @@
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:164px}
   .gochip .gk{font-size:var(--fs-cap);color:var(--t3);font-weight:650}
   .gochip .gk::after{content:' kcal'}
+  /* The close-out. Reads as a receipt, not a trophy case — the trophies are
+     inside, and the accent budget on Today belongs to the Open workout button. */
+  .recap{display:flex;align-items:center;gap:var(--sp-3);width:100%;text-align:left;
+    cursor:pointer;border:1px solid var(--line);background:var(--s1)}
+  .recap:hover{background:var(--s2);border-color:var(--line-2)}
+  .recap-l{flex:1 1 auto;min-width:0}
+  .recap-h{display:flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-base);
+    font-weight:700;color:var(--t1)}
+  .recap-h .ic{width:17px;height:17px;color:var(--good)}
+  .recap-m{font-size:var(--fs-sm);color:var(--t2);margin-top:3px;
+    font-variant-numeric:tabular-nums}
+  .recap-pr{display:flex;align-items:center;gap:6px;font-size:var(--fs-xs);
+    color:var(--warn);font-weight:650;margin-top:5px}
+  .recap-pr .ic{width:14px;height:14px}
   .measlist{display:flex;flex-direction:column;gap:var(--sp-2)}
   .measrow{display:flex;align-items:center;gap:var(--sp-3)}
   .measlab{flex:1 1 auto;min-width:0;font-size:var(--fs-sm);font-weight:650;color:var(--t1);
@@ -1800,6 +1814,110 @@ const SPLITS = {
     ]},
   ],
 };
+/* A SESSION HAS A BEGINNING AND AN END. The app recorded sets against a date
+   and nothing else — no clock, no close, no way to ask "how long was that, and
+   was it better than last time". The start is stamped by the first thing you do
+   to a set, not by a Start button nobody would press. */
+function markSessionStart(k){
+  const s=dstore(k); if(s.sess && s.sess.s) return;
+  s.sess=Object.assign({}, s.sess, {s:nowMs()});
+}
+function sessionStats(k){
+  k=k||curKey(); const s=data.dates[k]; if(!s||!s.sets) return null;
+  let sets=0, tonnage=0, reps=0, exs=0, warm=0;
+  const muscles={};
+  Object.keys(s.sets).forEach(ex=>{
+    const arr=s.sets[ex]||[]; let any=0;
+    arr.forEach(st=>{
+      if(isWarmup(st) && st && st.done){ warm++; return; }
+      if(!countsAsWork(st)) return;
+      any++; sets++;
+      const w=parseFloat(st.w), r=parseInt(st.r,10);
+      if(!isNaN(r)&&r>0){ reps+=r; if(!isNaN(w)&&w>0) tonnage+=w*r; }
+    });
+    if(any){ exs++; musclesOf(ex).forEach(m=>{ muscles[m]=(muscles[m]||0)+any; }); }
+  });
+  if(!sets) return null;
+  const dur=(s.sess&&s.sess.s&&s.sess.e)? Math.round((s.sess.e-s.sess.s)/60000) : null;
+  return {sets, tonnage:Math.round(tonnage), reps, exs, warm, muscles, dur,
+          started:s.sess&&s.sess.s};
+}
+/* Per-exercise, against the last day this exercise was actually trained —
+   which needs no notion of "the same program day", so it keeps working for
+   an ad-hoc session or a swapped movement. */
+function sessionCompare(k){
+  k=k||curKey(); const s=data.dates[k]; if(!s||!s.sets) return [];
+  const out=[];
+  Object.keys(s.sets).forEach(ex=>{
+    const today=(s.sets[ex]||[]).filter(countsAsWork);
+    if(!today.length) return;
+    const e1=arr=>arr.reduce((b,st)=>{ const w=parseFloat(st.w),r=parseInt(st.r,10);
+      return (!isNaN(w)&&w>0&&!isNaN(r)&&r>0)? Math.max(b, w*(1+r/30)) : b; },0);
+    const vol=arr=>arr.reduce((a,st)=>{ const w=parseFloat(st.w),r=parseInt(st.r,10);
+      return a + ((!isNaN(w)&&w>0&&!isNaN(r)&&r>0)? w*r : 0); },0);
+    let prev=null;
+    Object.keys(data.dates).filter(d=>d<k).sort().reverse().some(d=>{
+      const a=((data.dates[d]||{}).sets||{})[ex]; if(!a) return false;
+      const done=a.filter(countsAsWork); if(!done.length) return false;
+      prev={k:d, sets:done}; return true;
+    });
+    out.push({ex, sets:today.length, e1:e1(today), vol:vol(today),
+      prevK:prev&&prev.k, prevE1:prev?e1(prev.sets):null, prevVol:prev?vol(prev.sets):null});
+  });
+  return out.sort((a,b)=>b.vol-a.vol);
+}
+function todayPRs(k){
+  k=k||curKey(); const s=data.dates[k]; if(!s||!s.sets) return [];
+  const out=[];
+  Object.keys(s.sets).forEach(ex=>{
+    const best=(s.sets[ex]||[]).filter(countsAsWork).reduce((b,st)=>{
+      const w=parseFloat(st.w),r=parseInt(st.r,10);
+      return (!isNaN(w)&&w>0&&!isNaN(r)&&r>0)? Math.max(b, w*(1+r/30)) : b; },0);
+    if(best>0 && best>prevBestE(ex)+0.01) out.push({ex, e:best});
+  });
+  return out;
+}
+function fmtDur(min){
+  if(min==null) return null;
+  if(min<60) return min+' min';
+  const h=Math.floor(min/60), m=min%60;
+  return h+' hr'+(m?' '+m+' min':'');
+}
+function sessionSheet(k){
+  k=k||curKey();
+  const st=sessionStats(k); if(!st) return false;
+  const cmp=sessionCompare(k), prs=todayPRs(k);
+  const musc=Object.keys(st.muscles).sort((a,b)=>st.muscles[b]-st.muscles[a])
+    .map(m=>{ const L=VOLUME_LANDMARKS.find(x=>x.id===m); return (L?L.name:m)+' '+st.muscles[m]; });
+  const tiles=[['Sets', st.sets], ['Exercises', st.exs],
+    ['Volume', fmtK(st.tonnage)+' '+data.unit]];
+  if(st.dur!=null) tiles.unshift(['Time', fmtDur(st.dur)]);
+  const rows=cmp.slice(0,10).map(c=>{
+    let note='first time', cls='flat';
+    if(c.prevE1!=null && c.prevE1>0 && c.e1>0){
+      const d=c.e1-c.prevE1;
+      const pct=d/c.prevE1*100;
+      if(Math.abs(pct)<1) { note='matched last time'; cls='flat'; }
+      else { note=(d>0?'+':'')+trimN(Math.round(d*10)/10)+' '+data.unit+' est 1RM'; cls=d>0?'up':'down'; }
+    } else if(c.prevVol!=null){
+      const d=c.vol-c.prevVol;
+      if(!d) { note='matched last time'; cls='flat'; }
+      else { note=(d>0?'+':'')+fmtK(Math.round(Math.abs(d)))+' '+data.unit+(d>0?' more':' less')+' volume'; cls=d>0?'up':'down'; }
+    }
+    return `<div class="setrow between"><span style="font-weight:600;font-size:var(--fs-sm)">${esc(c.ex)}
+        <span class="hint">· ${c.sets} ${c.sets===1?'set':'sets'}</span></span>
+      <span class="delta num ${cls}">${note}</span></div>`;
+  }).join('');
+  openSheet(`<h3 id="sheetTitle">Session complete</h3>
+    <div class="tiles">${tiles.map(t=>`<div class="tile"><div class="big num">${t[1]}</div><div class="lab">${t[0]}</div></div>`).join('')}</div>
+    ${prs.length?`<div class="sect-title">${prs.length===1?'New personal record':prs.length+' new personal records'}</div>
+      <div class="sets">${prs.map(p=>`<div class="setrow between"><span style="font-weight:600;font-size:var(--fs-sm)">${ic('trophy')} ${esc(p.ex)}</span>
+        <span class="hint nowrap num">${trimN(Math.round(p.e))} ${data.unit} est 1RM</span></div>`).join('')}</div>`:''}
+    ${musc.length?`<div class="hint lead" style="margin-top:var(--sp-3)">Trained: ${musc.join(' · ')}${st.warm?` · ${st.warm} warm-up ${st.warm===1?'set':'sets'} not counted`:''}</div>`:''}
+    ${rows?`<div class="sect-title">Against last time</div><div class="sets">${rows}</div>`:''}
+    <button class="btn" data-act="closesheet">Done</button>`);
+  return true;
+}
 /* ---------------- MUSCLE CLASSIFIER ----------------
    Maps an exercise name to the muscle group(s) it trains. Used by the focus
    feature (to bias volume) and as a fallback for swap suggestions. Keyword-based
@@ -2434,6 +2552,21 @@ function viewToday(){
     ${macroBlock(t)}
     <div class="hint tail num">${t.kc.toLocaleString()} of ${TARGET.kc.toLocaleString()} kcal eaten${s.cardio?' · cardio done':''}</div>
   </div>`;
+
+  /* A finished session gets a close-out that stays. Works on any day you page
+     back to, not just today. */
+  const fin=(data.dates[curKey()]||{}).sess;
+  if(fin && fin.e){
+    const st=sessionStats(curKey());
+    if(st){ const prs=todayPRs(curKey());
+      out+=`<button class="card recap tap" data-act="sessrecap" data-k="${curKey()}"
+        aria-label="Session summary for ${longDayLabel(curKey())}">
+        <div class="recap-l">
+          <div class="recap-h">${ic('check')} Session complete</div>
+          <div class="recap-m num">${st.sets} sets · ${fmtK(st.tonnage)} ${data.unit}${st.dur!=null?' · '+fmtDur(st.dur):''}</div>
+          ${prs.length?`<div class="recap-pr">${ic('trophy')} ${prs.length} new personal record${prs.length===1?'':'s'}</div>`:''}
+        </div><span class="chev">${ic('chevright')}</span></button>`; }
+  }
 
   // Up next — the single action this screen exists for.
   if(isToday()){
@@ -4303,12 +4436,25 @@ document.addEventListener('click', e=>{
     if(i>=0) arr.splice(i,1); else { if(arr.length>=2){ showToast('Focus is limited to 2 body parts','err'); return; } arr.push(p); }
     state.liftDay=getRot(); touchSettings(); save(); render(); }
   else if(a==='clearfocus'){ data.focus=[]; touchSettings(); save(); render(); }
-  else if(a==='finishday'){ const sp=curSplit(); const ni=((+el.dataset.i)+1)%sp.length; setRot(ni); state.liftDay=ni; touchSettings(); save(); state.tab='today'; render(); celebrate('Workout logged · next up '+sp[ni].tag); }
+  else if(a==='finishday'){ const sp=curSplit(); const ni=((+el.dataset.i)+1)%sp.length;
+    const s=dstore(); const had=sessionStats();
+    if(had){ s.sess=Object.assign({s:nowMs()}, s.sess, {e:nowMs()});
+      /* A session left open overnight is a forgotten tab, not a six-hour
+         workout — clamp rather than record a number nobody will believe. */
+      if(s.sess.e-s.sess.s > 5*3600000) s.sess.s=s.sess.e-5*3600000;
+      touch(); }
+    setRot(ni); state.liftDay=ni; touchSettings(); save(); state.tab='today'; render();
+    const shown = had && sessionSheet();
+    if(shown){ haptic('win');
+      const f=document.getElementById('flare');
+      if(f && !reduced()){ f.classList.remove('on'); void f.offsetWidth; f.classList.add('on'); setTimeout(()=>f.classList.remove('on'),1200); }
+      tone(659,0.18,0.10); setTimeout(()=>tone(880,0.22,0.11),110); setTimeout(()=>tone(1319,0.34,0.10),230);
+    } else celebrate('Workout logged · next up '+sp[ni].tag); }
   else if(a==='usesuggest'){ const ex=dec(el.dataset.ex), w=el.dataset.w; const s=dstore(); const arr=s.sets[ex]||(s.sets[ex]=[]);
     let n=0; document.querySelectorAll('input[data-in="setw"]').forEach(inp=>{ if(dec(inp.dataset.ex)===ex&&!inp.value){ const i=+inp.dataset.i; inp.value=w; arr[i]=arr[i]||{}; arr[i].w=w; n++;
       inp.classList.remove('autofilled'); void inp.offsetWidth; inp.classList.add('autofilled'); } });
     if(n){ touch(); save(); showToast('Filled '+n+' set'+(n===1?'':'s')+' with '+w+' '+data.unit,'good'); } else showToast('Those sets are already filled'); }
-  else if(a==='setdone'){ const ex=dec(el.dataset.ex),i=+el.dataset.i; const s=dstore(); const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{}; arr[i].done=!arr[i].done;
+  else if(a==='setdone'){ const ex=dec(el.dataset.ex),i=+el.dataset.i; markSessionStart(); const s=dstore(); const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{}; arr[i].done=!arr[i].done;
     if(arr[i].done&&(!arr[i].w||!arr[i].r)){ const ls=lastSets(ex); if(ls&&ls[i]){ if(!arr[i].w&&ls[i].w) arr[i].w=ls[i].w; if(!arr[i].r&&ls[i].r) arr[i].r=ls[i].r;
       const row=el.closest('.setrow'); if(row){ const ins=row.querySelectorAll('input'); if(ins[0]&&!ins[0].value) ins[0].value=arr[i].w||''; if(ins[1]&&!ins[1].value) ins[1].value=arr[i].r||''; } } }
     touch(); save();
@@ -4447,6 +4593,7 @@ document.addEventListener('click', e=>{
   else if(a==='storage'){ storageSheet(); }
   else if(a==='meals'){ mealsSheet(); }
   else if(a==='meassites'){ measSitesSheet(); }
+  else if(a==='sessrecap'){ sessionSheet(el.dataset.k); }
   else if(a==='toggsite'){ const id=el.dataset.m;
     const cur=measSites().map(m=>m.id); const i=cur.indexOf(id);
     if(i>=0){ if(cur.length<2){ showToast('Keep at least one measurement','err'); return; } cur.splice(i,1); }
@@ -4526,7 +4673,7 @@ document.addEventListener('input', e=>{
     const box=document.getElementById('foodresults'); if(box) box.innerHTML=foodResultsHTML(el.value);
     scheduleFoodSearch(el.value); return; }
   const s=dstore();
-  if(a==='setw'||a==='setr'){ const ex=dec(el.dataset.ex),i=+el.dataset.i; const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{}; arr[i][a==='setw'?'w':'r']=el.value; touch(); save(); }
+  if(a==='setw'||a==='setr'){ markSessionStart(); const ex=dec(el.dataset.ex),i=+el.dataset.i; const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{}; arr[i][a==='setw'?'w':'r']=el.value; touch(); save(); }
   if(a==='measval'){ const id=el.dataset.m; const v=measFromUnit(el.value);
     const st=dstore(); st.meas=st.meas||{};
     if(el.value.trim()===''||v==null||!(v>0)) delete st.meas[id]; else st.meas[id]=Math.round(v*100)/100;
