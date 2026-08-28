@@ -388,6 +388,10 @@
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:164px}
   .gochip .gk{font-size:var(--fs-cap);color:var(--t3);font-weight:650}
   .gochip .gk::after{content:' kcal'}
+  /* The machine-readable half of a failed lookup, kept quiet but present so a
+     user can tell you exactly what happened. */
+  .diag{font-size:var(--fs-cap);color:var(--t4);font-family:var(--f-num);
+    letter-spacing:.02em;margin-top:2px}
   /* The close-out. Reads as a receipt, not a trophy case — the trophies are
      inside, and the accent budget on Today belongs to the Open workout button. */
   .recap{display:flex;align-items:center;gap:var(--sp-3);width:100%;text-align:left;
@@ -3250,15 +3254,29 @@ let foodSearchT=null, foodSearchSeq=0, foodSearchAbort=null;
 function offNum(v){ v=parseFloat(v); return isNaN(v)?0:Math.round(v); }
 /* Defensive by design: one malformed product in a page of twenty must not cost
    the other nineteen, so every row is mapped inside its own guard. */
+function offName(pr){
+  /* Open Food Facts is crowd-sourced and multilingual: plenty of products have
+     no `product_name` but do have a localised one, or only a generic name. */
+  const keys=['product_name','product_name_en','generic_name','generic_name_en','abbreviated_product_name'];
+  for(const k of keys){ const v=pr[k]; if(typeof v==='string' && v.trim()) return v.trim(); }
+  return '';
+}
+const KJ_PER_KCAL=4.184;
+function offKcal(n){
+  let kc=offNum(n['energy-kcal_100g']);
+  if(kc) return kc;
+  /* Older and non-US entries carry kilojoules only. */
+  const kj=offNum(n['energy-kj_100g']) || offNum(n.energy_100g);
+  if(kj) return Math.round(kj/KJ_PER_KCAL);
+  return 0;
+}
 function offMap(pr){
   try{
     if(!pr || typeof pr!=='object') return null;
     const n=(pr.nutriments && typeof pr.nutriments==='object') ? pr.nutriments : {};
-    /* A non-string name is malformed data, not a product called "12345". */
-    if(typeof pr.product_name!=='string') return null;
-    const name=pr.product_name.trim();
+    const name=offName(pr);
     if(!name) return null;
-    const kc=offNum(n['energy-kcal_100g']);
+    const kc=offKcal(n);
     const p=offNum(n.proteins_100g), c=offNum(n.carbohydrates_100g), f=offNum(n.fat_100g);
     if(!p && !c && !f && !kc) return null;
     return {name: name.slice(0,120),
@@ -3267,8 +3285,13 @@ function offMap(pr){
             kc: kc || Math.round(p*4+c*4+f*9)};
   }catch(e){ return null; }
 }
+/* Returns {items, status, detail}. The status matters as much as the items:
+   every way this can fail used to collapse into one "Nothing found", so a
+   blocked host, an expired certificate, a CORS rejection, a timeout and a
+   genuinely obscure search term were indistinguishable — to the user and to
+   anyone trying to diagnose it. */
 async function searchExternal(q, signal){
-  const fields='code,product_name,brands,nutriments';
+  const fields='code,product_name,product_name_en,generic_name,brands,nutriments';
   /* cgi/search.pl is Open Food Facts' full-text endpoint. The v2 route is a
      tag-filter API and does not do free text, so it goes second purely as a
      fallback in case the legacy one is ever retired. */
@@ -3276,24 +3299,42 @@ async function searchExternal(q, signal){
     `${OFF_BASE}/cgi/search.pl?search_terms=${enc(q)}&search_simple=1&action=process&json=1&page_size=20&fields=${fields}`,
     `${OFF_BASE}/api/v2/search?search_terms=${enc(q)}&page_size=20&fields=${fields}`
   ];
+  let worst=null, sawEmptyPage=false, sawUnmappable=0;
   for(const url of urls){
-    if(signal && signal.aborted) return [];
+    if(signal && signal.aborted) return {items:[], status:'cancelled'};
+    let timedOut=false;
     try{
       const ctrl=new AbortController();
       const stop=()=>ctrl.abort();
+      const to=setTimeout(()=>{ timedOut=true; stop(); }, 5000);
       if(signal) signal.addEventListener('abort', stop);
-      const to=setTimeout(stop, 5000);
       let r;
-      try{ r=await fetch(url,{signal:ctrl.signal}); }
+      try{ r=await fetch(url,{signal:ctrl.signal, headers:{'Accept':'application/json'}}); }
       finally{ clearTimeout(to); if(signal) signal.removeEventListener('abort', stop); }
-      if(!r.ok) continue;
-      const j=await r.json();
-      const list=(j && Array.isArray(j.products)) ? j.products : [];
-      const mapped=list.map(offMap).filter(Boolean);
-      if(mapped.length) return mapped;
-    }catch(e){ /* try the next endpoint */ }
+      if(!r.ok){ worst=worst||{status:'http', detail:'HTTP '+r.status}; continue; }
+      let j;
+      try{ j=await r.json(); }
+      catch(e){ worst=worst||{status:'badjson', detail:'response was not JSON'}; continue; }
+      if(!j || !Array.isArray(j.products)){
+        worst=worst||{status:'badshape', detail:'no `products` array in the response'}; continue; }
+      if(!j.products.length){ sawEmptyPage=true; continue; }
+      const mapped=j.products.map(offMap).filter(Boolean);
+      if(mapped.length) return {items:mapped, status:'ok'};
+      /* Products came back but none carried usable nutrition. */
+      sawUnmappable+=j.products.length;
+    }catch(e){
+      if(signal && signal.aborted) return {items:[], status:'cancelled'};
+      if(timedOut) worst=worst||{status:'timeout', detail:'no answer in 5 seconds'};
+      /* A blocked host, a DNS failure and a CORS rejection all arrive as a
+         TypeError with no detail — the browser deliberately tells the page
+         nothing more than "it did not happen". */
+      else worst=worst||{status:'unreachable', detail:(e&&e.name)||'network error'};
+    }
   }
-  return [];
+  if(navigator.onLine===false) return {items:[], status:'offline'};
+  if(sawUnmappable) return {items:[], status:'nonutrition', detail:sawUnmappable+' results had no nutrition data'};
+  if(sawEmptyPage) return {items:[], status:'empty'};
+  return {items:[], status:(worst&&worst.status)||'empty', detail:worst&&worst.detail};
 }
 /* Called when the sheet closes, so an abandoned query stops costing anything. */
 function cancelFoodSearch(){
@@ -3308,6 +3349,26 @@ function scheduleFoodSearch(q){
   if(q.length<3){ box.innerHTML=''; return; }
   foodSearchT=setTimeout(()=>runFoodSearch(q), 450);
 }
+/* One message per way this can end, because "Nothing found" for all of them is
+   what made a broken lookup indistinguishable from an obscure search term. The
+   reachability cases name the likely cause, since the browser refuses to: a
+   blocked host, a DNS failure and a CORS rejection are all one bare TypeError. */
+function foodSearchMessage(out){
+  const M={
+    empty:      'No matches in the food database. Create the food once and it is yours from then on.',
+    nonutrition:'Matches came back, but none of them carry nutrition data. Create the food from the label instead.',
+    offline:    'Offline — your own foods are still searchable, and this will work again when you have a connection.',
+    timeout:    'The food database did not answer. Try again, or create the food from its label.',
+    http:       'The food database returned an error. Try again shortly, or create the food from its label.',
+    badjson:    'The food database sent something this app could not read. Create the food from its label.',
+    badshape:   'The food database sent something this app could not read. Create the food from its label.',
+    unreachable:'Could not reach the food database. If you opened this file directly rather than adding it to your Home Screen, the browser may be blocking the request.'
+  };
+  const msg=M[out.status]||M.unreachable;
+  const diag=(out.status!=='empty'&&out.status!=='offline')
+    ? `<div class="hint c diag">${esc(out.status)}${out.detail?' · '+esc(out.detail):''}</div>` : '';
+  return `<div class="hint c">${msg}</div>${diag}`;
+}
 async function runFoodSearch(q){
   const box=remoteBox(); if(!box) return;
   if(foodSearchAbort){ try{ foodSearchAbort.abort(); }catch(e){} }
@@ -3315,15 +3376,13 @@ async function runFoodSearch(q){
   foodSearchAbort=ctrl;
   const seq=++foodSearchSeq;
   box.innerHTML=`<div class="sect-title">Food database</div><div class="hint c">Searching…</div>`;
-  let res=[];
-  try{ res=await searchExternal(q, ctrl&&ctrl.signal); }catch(e){ res=[]; }
+  let out={items:[], status:'unreachable'};
+  try{ out=await searchExternal(q, ctrl&&ctrl.signal); }catch(e){ out={items:[], status:'unreachable', detail:(e&&e.name)||''}; }
   if(foodSearchAbort===ctrl) foodSearchAbort=null;
   if(seq!==foodSearchSeq || !remoteBox() || (state.foodQuery||'').trim()!==q) return;   /* a newer query won */
-  if(!res.length){
-    box.innerHTML=`<div class="sect-title">Food database</div>
-      <div class="hint c">${navigator.onLine===false?'Offline — your own foods are still searchable.':'Nothing found. Create the food and it is yours from then on.'}</div>`;
-    return;
-  }
+  if(out.status==='cancelled') return;
+  const res=out.items;
+  if(!res.length){ box.innerHTML=`<div class="sect-title">Food database</div>`+foodSearchMessage(out); return; }
   state.foodRemote=res;
   box.innerHTML=`<div class="sect-title">Food database</div>`+res.map((f,i)=>`
     <div class="foodrow" data-act="pickremote" data-i="${i}">
@@ -3479,17 +3538,34 @@ async function onBarcode(code){
   if(known){ state.sheetMeal=state.fuelMeal||defaultMeal(); foodDetailSheet(known.id); showToast('Found '+known.name,'good'); return; }
   showToast('Looking up '+code+'…');
   const info=await lookupBarcode(code);
-  if(info) foodFormSheet(null,{name:info.name,serv:'100 g',p:info.p,c:info.c,f:info.f,barcode:code});
-  else { foodFormSheet(null,{barcode:code,serv:'100 g'}); showToast('Not in the database — enter it once and it is remembered'); }
+  if(info && info.ok){ foodFormSheet(null,{name:info.name,serv:'100 g',p:info.p,c:info.c,f:info.f,barcode:code}); return; }
+  /* Same distinction the text search now makes: "this barcode is not in the
+     database" and "the lookup never happened" ask the user for different
+     things, and telling them apart costs one field. */
+  foodFormSheet(null,{barcode:code,serv:'100 g'});
+  showToast((info&&info.status==='missing')
+    ? 'Not in the database — enter it once and it is remembered'
+    : 'Could not reach the food database — enter it from the label and it is remembered',
+    (info&&info.status==='missing')?'info':'err');
 }
+/* {ok:true, …} on a hit; otherwise {ok:false, status} where status separates
+   "the database does not have it" from "we never got an answer". */
 async function lookupBarcode(code){
   try{ const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),6000);
-    const r=await fetch('https://world.openfoodfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json?fields=product_name,nutriments',{signal:ctrl.signal});
-    clearTimeout(to); if(!r.ok) return null; const j=await r.json();
-    if(!j||j.status!==1||!j.product) return null; const n=j.product.nutriments||{};
-    const num=v=>{ v=parseFloat(v); return isNaN(v)?0:Math.round(v); };
-    return {name:j.product.product_name||('Item '+code), p:num(n.proteins_100g), c:num(n.carbohydrates_100g), f:num(n.fat_100g)};
-  }catch(e){ return null; }
+    let r;
+    try{ r=await fetch(OFF_BASE+'/api/v2/product/'+encodeURIComponent(code)
+      +'.json?fields=product_name,product_name_en,generic_name,brands,nutriments',
+      {signal:ctrl.signal, headers:{'Accept':'application/json'}}); }
+    finally{ clearTimeout(to); }
+    /* 404 is the database's own way of saying "no such barcode". */
+    if(r.status===404) return {ok:false, status:'missing'};
+    if(!r.ok) return {ok:false, status:'http'};
+    let j; try{ j=await r.json(); }catch(e){ return {ok:false, status:'badjson'}; }
+    if(!j || j.status===0 || !j.product) return {ok:false, status:'missing'};
+    const mapped=offMap(j.product);
+    if(!mapped) return {ok:false, status:'nonutrition'};
+    return {ok:true, name:mapped.name||('Item '+code), p:mapped.p, c:mapped.c, f:mapped.f, kc:mapped.kc};
+  }catch(e){ return {ok:false, status:'unreachable'}; }
 }
 function barcodeUnsupported(){ openSheet(`<h3 id="sheetTitle">Barcode scanning</h3>
   <div class="hint c" style="margin-bottom:var(--sp-4)">In-app scanning needs a supported browser. On iPhone use <b>Safari</b> (add to Home Screen); on Android use <b>Chrome</b>. You can still add anything by hand.</div>
