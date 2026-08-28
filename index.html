@@ -600,6 +600,35 @@
     font-size:var(--fs-xs);font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;
     font-family:var(--f-num);font-variant-numeric:tabular-nums;transition:background var(--d-2) var(--ease),color var(--d-2) var(--ease)}
   .setrow.done .setno{background:var(--good);color:#04160D}
+  /* The set number is a button now: tap it to say what the set was. It keeps
+     its 26px look but claims a full touch target through a bleed. */
+  button.setno{border:1px solid transparent;cursor:pointer;padding:0;position:relative;
+    font-family:var(--f-num);appearance:none;-webkit-appearance:none}
+  button.setno::after{content:'';position:absolute;inset:-9px -6px}
+  /* Warm-up: dashed and dim, because it is the one type that counts for nothing. */
+  .setno.t-wu{background:transparent;border:1px dashed var(--line-field);color:var(--t3)}
+  .setrow.done .setno.t-wu{background:transparent;border-style:dashed;color:var(--t3)}
+  /* Technique sets are still working sets — marked, not demoted, and
+     deliberately not accented: the accent budget belongs to the day's targets. */
+  .setno.t-d,.setno.t-m,.setno.t-rp{background:var(--s3);color:var(--t1);
+    border-color:var(--line)}
+  /* The dashed badge carries the distinction. Stacking another opacity drop on
+     top of .done's .6 made a completed warm-up too faint to read back, and you
+     do want to see what you ramped with. */
+  .setrow.wu input{color:var(--t2)}
+  /* Specificity matters here: `.setrow input` is (0,1,1) and would otherwise
+     win, handing the RIR box the 150px cap and crushing weight and reps. */
+  .setrow input.rirf{flex:0 0 52px;width:52px;max-width:52px;padding-left:2px;padding-right:2px}
+  .setadd{display:flex;justify-content:flex-end;gap:var(--sp-2);padding:var(--sp-2) var(--sp-1) 0}
+  .mini{background:transparent;border:1px solid var(--line);border-radius:var(--r-sm);
+    color:var(--t2);font-size:var(--fs-xs);font-weight:650;padding:7px 12px;min-height:34px;
+    cursor:pointer;transition:background var(--d-2) var(--ease),color var(--d-2) var(--ease)}
+  .mini:hover{background:var(--s2);color:var(--t1)}
+  @media (max-width:380px){
+    .setrow{gap:5px}
+    .setrow .u{width:9px}
+    .setrow input.rirf{flex-basis:46px;width:46px;max-width:46px}
+  }
   .setrow input{width:100%;min-width:0;max-width:150px;min-height:42px;background:var(--s2);border:1px solid var(--line-field);
     border-radius:var(--r-sm);color:var(--t1);font-size:var(--fs-md);padding:9px 6px;text-align:center;
     font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:600;
@@ -1842,7 +1871,7 @@ let SCHEMA_AHEAD = false;   /* stored blob is newer than this build understands 
    (a per-device display preference — a phone should not inherit a desktop's). */
 const SYNC_FIELDS = ['unit','restDefault','deloadWeeks','blockStart','pinHash','lockSkipped',
   'foods','rotationPos','rotationByPhase','phase','phaseTargets','phaseMode','focus',
-  'presetsRemoved','mealsV3','migratedFood','profile','onboarded'];
+  'presetsRemoved','mealsV3','migratedFood','profile','onboarded','logRIR'];
 const SYNC_EXEMPT = ['v','dates','updatedAt','viewMode'];
 function auditSchema(){
   const unknown=Object.keys(data).filter(k=>SYNC_FIELDS.indexOf(k)<0 && SYNC_EXEMPT.indexOf(k)<0);
@@ -2234,6 +2263,26 @@ function weekStrip(){
       </div></div>`).join('')+`</div>
     <div class="legend"><span><i class="dot s"></i>Lift</span><span><i class="dot m"></i>Macros</span><span><i class="dot c"></i>Cardio</span></div>`;
 }
+/* WHAT A SET WAS. A working set is the default and stores nothing; anything
+   else stores a two-letter tag, so the common case costs zero bytes.
+   Warm-ups are the load-bearing distinction: they are excluded from volume,
+   personal records and e1RM, because a ramp-up set is not evidence of anything
+   except that you warmed up. Drop / myo / rest-pause DO count — they are
+   working sets with a technique attached, which is exactly how the program
+   prescribes them. */
+const SET_TYPES=[
+  {id:'',   ab:null, name:'Working set'},
+  {id:'wu', ab:'W',  name:'Warm-up'},
+  {id:'d',  ab:'D',  name:'Drop set'},
+  {id:'m',  ab:'M',  name:'Myo-reps'},
+  {id:'rp', ab:'R',  name:'Rest-pause'},
+];
+function setType(st){ const t=(st&&st.t)||''; return SET_TYPES.find(x=>x.id===t)||SET_TYPES[0]; }
+function isWarmup(st){ return !!(st && st.t==='wu'); }
+/* The one predicate every analytic should use: it happened, and it counted. */
+function countsAsWork(st){ return !!(st && st.done && st.t!=='wu'); }
+function nextSetType(t){ const i=SET_TYPES.findIndex(x=>x.id===(t||'')); return SET_TYPES[(i+1)%SET_TYPES.length].id; }
+
 function lastFor(exName){
   const keys=Object.keys(data.dates).filter(k=>k<curKey()).sort().reverse();
   for(const k of keys){ const arr=(data.dates[k].sets||{})[exName];
@@ -2243,7 +2292,10 @@ function lastFor(exName){
 function lastSets(exName){
   const keys=Object.keys(data.dates).filter(k=>k<curKey()).sort().reverse();
   for(const k of keys){ const arr=(data.dates[k].sets||{})[exName];
-    if(arr&&arr.some(s=>s&&(s.w||s.r))) return arr.map(s=>({w:(s&&s.w)||'',r:(s&&s.r)||''})); }
+    /* Positional and unfiltered on purpose: these become the row placeholders,
+       so row 3 must show what row 3 did last time. Callers that need only the
+       working sets filter on `t` themselves. */
+    if(arr&&arr.some(s=>s&&(s.w||s.r))) return arr.map(s=>({w:(s&&s.w)||'',r:(s&&s.r)||'',t:(s&&s.t)||'',rir:(s&&s.rir)})); }
   return null;
 }
 
@@ -2381,7 +2433,7 @@ function exerciseHistory(name){
        the e1RM trend count only what was completed. */
     let bestE=0, bestSet=null, volume=0, reps=0;
     sets.forEach(st=>{
-      if(!st.done) return;
+      if(!countsAsWork(st)) return;
       const w=parseFloat(st.w), r=parseInt(st.r,10);
       if(!isNaN(r)&&r>0){ reps+=r; if(!isNaN(w)&&w>0){ volume+=w*r; const e=w*(1+r/30);
         if(e>bestE){ bestE=e; bestSet=st; } } }
@@ -2434,7 +2486,11 @@ function fmtWt(w){ w=Math.round(w*100)/100; return (Number.isInteger(w)?w:parseF
 function suggestWeight(ex){
   const rr=repRange(ex.r); if(!rr) return null;
   const ls=lastSets(ex.n); if(!ls) return null;
-  const done=ls.filter(st=>st.w!==''&&!isNaN(parseFloat(st.w)));
+  /* Warm-ups must not vote. They are light and often high-rep, so including
+     them can make every set look like it hit the top of the range and hand out
+     a weight increase the user never earned. */
+  const done=ls.filter(st=>!isWarmup(st) && st.w!==''&&!isNaN(parseFloat(st.w)));
+  if(!done.length) return null;
   if(!done.length) return null;
   const lw=Math.max.apply(null, done.map(st=>parseFloat(st.w)));
   if(!isFinite(lw)||lw<=0) return null;
@@ -2451,9 +2507,14 @@ function viewLift(){
   const d=sp[state.liftDay]; const s=dstore();
   const exList=d.blocks.reduce((a,b)=>a.concat(b.ex),[]);
   // How far through the session are we — the thing the old screen never told you.
+  /* Counts working sets only, and counts rows actually on screen — a set you
+     added mid-workout is part of the session, a warm-up is not. */
   let planned=0, done=0;
-  exList.forEach(e0=>{ const nm=(s.swaps&&s.swaps[e0.n])||e0.n; planned+=e0.s;
-    done+=((s.sets||{})[nm]||[]).filter(x=>x&&x.done).length; });
+  exList.forEach(e0=>{ const nm=(s.swaps&&s.swaps[e0.n])||e0.n;
+    const arr=((s.sets||{})[nm]||[]);
+    const rowN=Math.max(e0.s, arr.length);
+    for(let i=0;i<rowN;i++){ if(!isWarmup(arr[i])) planned++; }
+    done+=arr.filter(countsAsWork).length; });
   done=Math.min(done,planned);
 
   let out=`<div class="chips">${chips}</div>`;
@@ -2463,7 +2524,7 @@ function viewLift(){
   const rd=data.restDefault||120; const RO=[[60,'60s'],[90,'90s'],[120,'2m'],[180,'3m']];
   out+=`<div class="restsel"><span>${ic('timer')}Rest</span><div class="seg sm" role="group" aria-label="Rest timer length">${
     RO.map(o=>`<button class="${o[0]===rd?'on':''}" data-act="setrest" data-s="${o[0]}" aria-pressed="${o[0]===rd}">${o[1]}</button>`).join('')}</div></div>`;
-  out+=`<div class="lift-legend"><b>RIR</b> = reps left in reserve · <b>+myo/+drop/+RP</b> apply to the final set · <span class="pdot">●</span> priority bring-up</div>`;
+  out+=`<div class="lift-legend"><b>RIR</b> = reps left in reserve · tap a <b>set number</b> to mark it a warm-up or a drop/myo/rest-pause set · <span class="pdot">●</span> priority bring-up</div>`;
   d.blocks.forEach(block=>{
     if(block.label) out+=`<div class="sect-title">${esc(block.label)}</div>`;
     block.ex.forEach(ex0=>{
@@ -2475,18 +2536,32 @@ function viewLift(){
       const last=lastFor(name);
       const ls=lastSets(name);
       const sg=suggestWeight(ex);
-      const allDone=ex.s>0 && Array.from({length:ex.s},(_,i)=>saved[i]).every(st=>st&&st.done);
-      let rows='';
-      for(let i=0;i<ex.s;i++){ const st=saved[i]||{};
+      /* The prescription is a floor, not a cage: extra sets logged today render
+         alongside the planned ones. */
+      const rowN=Math.max(ex.s, saved.length);
+      const allDone=rowN>0 && Array.from({length:rowN},(_,i)=>saved[i]).every(st=>st&&st.done);
+      const useRir=!!data.logRIR;
+      let rows='', workNo=0;
+      for(let i=0;i<rowN;i++){ const st=saved[i]||{};
+        const ty=setType(st), wu=ty.id==='wu';
+        if(!wu) workNo++;
+        const lbl=wu?'Warm-up set':('Set '+workNo);
         const pw=sg?sg.w:((ls&&ls[i]&&ls[i].w)?ls[i].w:data.unit);
         const pr=(ls&&ls[i]&&ls[i].r)?ls[i].r:'reps';
-        rows+=`<div class="setrow ${st.done?'done':''}"><span class="setno">${i+1}</span>
-          <input inputmode="decimal" enterkeyhint="next" aria-label="Set ${i+1} weight" placeholder="${esc(pw)}" value="${esc(st.w||'')}" data-in="setw" data-ex="${enc(name)}" data-i="${i}">
+        rows+=`<div class="setrow ${st.done?'done':''} ${wu?'wu':''}">
+          <button class="setno${ty.id?' t-'+ty.id:''}" data-act="settype" data-ex="${enc(name)}" data-i="${i}"
+            title="${ty.name} — tap to change" aria-label="${lbl}: ${ty.name}. Change set type.">${ty.ab||workNo}</button>
+          <input inputmode="decimal" enterkeyhint="next" aria-label="${lbl} weight" placeholder="${esc(pw)}" value="${esc(st.w||'')}" data-in="setw" data-ex="${enc(name)}" data-i="${i}">
           <span class="u" aria-hidden="true">×</span>
-          <input inputmode="numeric" enterkeyhint="done" aria-label="Set ${i+1} reps" placeholder="${esc(pr)}" value="${esc(st.r||'')}" data-in="setr" data-ex="${enc(name)}" data-i="${i}">
+          <input inputmode="numeric" enterkeyhint="${useRir?'next':'done'}" aria-label="${lbl} reps" placeholder="${esc(pr)}" value="${esc(st.r||'')}" data-in="setr" data-ex="${enc(name)}" data-i="${i}">
+          ${useRir?`<input class="rirf" inputmode="numeric" enterkeyhint="done" aria-label="${lbl} reps in reserve" placeholder="RIR" value="${st.rir==null?'':esc(st.rir)}" data-in="setrir" data-ex="${enc(name)}" data-i="${i}">`:''}
           <button class="chk ${st.done?'on':''}" data-act="setdone" data-ex="${enc(name)}" data-i="${i}"
-            role="checkbox" aria-checked="${st.done?'true':'false'}" aria-label="Set ${i+1} complete">${ic('check')}</button></div>`;
+            role="checkbox" aria-checked="${st.done?'true':'false'}" aria-label="${lbl} complete">${ic('check')}</button></div>`;
       }
+      rows+=`<div class="setadd">
+        <button class="mini" data-act="addset" data-ex="${enc(name)}" data-n="${rowN}">+ Set</button>
+        ${rowN>ex.s?`<button class="mini" data-act="delset" data-ex="${enc(name)}" data-n="${rowN}" data-min="${ex.s}">− Set</button>`:''}
+      </div>`;
       const swapNote = swapName? `<div class="swapnote">swapped from ${esc(orig)} · <span class="lnk" role="button" tabindex="0" data-act="revertswap" data-orig="${enc(orig)}">revert</span></div>` : '';
       const suggestion = sg
         ? `<button class="sugg ${sg.up?'up':''}" data-act="usesuggest" data-ex="${enc(name)}" data-w="${sg.w}">
@@ -3161,7 +3236,7 @@ function trimN(n){ return (Math.round(n*10)/10).toString(); }
 function getPRs(){
   const map={};
   Object.keys(data.dates).forEach(k=>{ const sets=data.dates[k].sets||{};
-    Object.keys(sets).forEach(ex=>{ (sets[ex]||[]).forEach(st=>{ if(!st||!st.done) return;
+    Object.keys(sets).forEach(ex=>{ (sets[ex]||[]).forEach(st=>{ if(!countsAsWork(st)) return;
       const w=parseFloat(st.w), r=parseInt(st.r,10);
       if(!isNaN(w)&&w>0&&!isNaN(r)&&r>0){ const e=w*(1+r/30); if(!map[ex]||map[ex].type!=='w'||e>map[ex].e) map[ex]={type:'w',w:w,r:r,e:e,date:k}; }
       else if(!isNaN(r)&&r>0){ if(!map[ex]){ map[ex]={type:'bw',r:r,date:k,e:0}; } else if(map[ex].type==='bw'&&r>map[ex].r){ map[ex]={type:'bw',r:r,date:k,e:0}; } }
@@ -3181,7 +3256,7 @@ function viewPRs(){
 }
 function prevBestE(ex){ let best=0; const tk=todayKey();
   Object.keys(data.dates).forEach(k=>{ if(k===tk) return; const arr=(data.dates[k].sets||{})[ex]||[];
-    arr.forEach(st=>{ if(!st||!st.done) return; const w=parseFloat(st.w),r=parseInt(st.r,10); if(!isNaN(w)&&w>0&&!isNaN(r)&&r>0){ const e=w*(1+r/30); if(e>best) best=e; } }); });
+    arr.forEach(st=>{ if(!countsAsWork(st)) return; const w=parseFloat(st.w),r=parseInt(st.r,10); if(!isNaN(w)&&w>0&&!isNaN(r)&&r>0){ const e=w*(1+r/30); if(e>best) best=e; } }); });
   return best; }
 let toastT=null;
 const TOAST_ICON={good:'check',win:'trophy',err:'info',info:'info'};
@@ -3252,7 +3327,7 @@ function weeklyVolume(keys){
   (keys||weekKeys()).forEach(k=>{
     const sets=((data.dates[k]||{}).sets)||{};
     Object.keys(sets).forEach(ex=>{
-      const done=(sets[ex]||[]).filter(st=>st&&st.done).length;
+      const done=(sets[ex]||[]).filter(countsAsWork).length;
       if(!done) return;
       total+=done;                       /* each set counted once, whatever it trains */
       const ms=musclesOf(ex);
@@ -3588,6 +3663,9 @@ function menuSheet(){
       <button class="${vm==='auto'?'on':''}" data-act="setview" data-v="auto" aria-pressed="${vm==='auto'}">Auto</button>
       <button class="${vm==='mobile'?'on':''}" data-act="setview" data-v="mobile" aria-pressed="${vm==='mobile'}">Mobile</button>
       <button class="${vm==='desktop'?'on':''}" data-act="setview" data-v="desktop" aria-pressed="${vm==='desktop'}">Computer</button></div>
+    <div class="sect-title">Training</div>
+    <div class="menulist">${row('togglerir','dumbbell','Log RIR on every set','Reps left in reserve, next to the reps box',
+      data.logRIR?'<span class="badge">On</span>':'<span class="chev">'+ic('chevright')+'</span>')}</div>
     <div class="sect-title">Food</div>
     <div class="menulist">${row('myfoods','plate','My foods',(data.foods||[]).length+' saved')}</div>
     <div class="sect-title">Sync &amp; security</div>
@@ -3864,8 +3942,9 @@ function markExerciseComplete(exEl, exName){
 }
 function paintSetProgress(){
   const wrap=document.querySelector('.setprog'); if(!wrap) return;
-  const done=document.querySelectorAll('#view .chk.on').length;
-  const planned=document.querySelectorAll('#view .chk').length;
+  /* Warm-up rows are not part of the session's working-set count. */
+  const done=document.querySelectorAll('#view .setrow:not(.wu) .chk.on').length;
+  const planned=document.querySelectorAll('#view .setrow:not(.wu) .chk').length;
   const b=wrap.querySelector('b'); if(b) b.textContent=done;
   const i=wrap.querySelector('.bar > i'); if(i) i.style.width=pctOf(done,planned)+'%';
 }
@@ -3884,6 +3963,28 @@ document.addEventListener('click', e=>{
     try{ inp.showPicker(); }catch(err){ inp.focus(); inp.click(); } }
   else if(a==='startlift'){ state.tab='lift'; state.liftDay=+el.dataset.i; render(); }
   else if(a==='pickday'){ state.liftDay=+el.dataset.i; render(); }
+  else if(a==='settype'){ const ex=dec(el.dataset.ex), i=+el.dataset.i;
+    const st=dstore(); const arr=st.sets[ex]||(st.sets[ex]=[]); arr[i]=arr[i]||{};
+    const nt=nextSetType(arr[i].t);
+    if(nt) arr[i].t=nt; else delete arr[i].t;   /* a working set stores nothing */
+    haptic('pick'); touch(); save(); render();
+    showToast(setType(arr[i]).name + (nt==='wu' ? ' — left out of volume and records' : ''), 'info'); }
+  else if(a==='addset'){ const ex=dec(el.dataset.ex), n=+el.dataset.n;
+    const st=dstore(); const arr=st.sets[ex]||(st.sets[ex]=[]);
+    while(arr.length<n) arr.push({});          /* materialise the prescribed rows first */
+    arr.push({}); haptic('tap'); touch(); save(); render(); }
+  else if(a==='delset'){ const ex=dec(el.dataset.ex), min=+el.dataset.min;
+    const st=dstore(); const arr=st.sets[ex]||[];
+    /* Only ever removes rows beyond the prescription, and never one with
+       something in it — the button is not a way to lose a logged set. */
+    let removed=false;
+    while(arr.length>min){ const last=arr[arr.length-1];
+      if(last && (last.w||last.r||last.done||last.rir!=null)) break;
+      arr.pop(); removed=true; break; }
+    if(!removed){ showToast('That set has something logged in it — clear it first','err'); return; }
+    haptic('tap'); touch(); save(); render(); }
+  else if(a==='togglerir'){ data.logRIR=!data.logRIR; touchSettings(); save(); closeSheet(); render();
+    showToast(data.logRIR?'RIR logging on — a box after reps on every set':'RIR logging off','good'); }
   else if(a==='swapex'){ swapSheet(dec(el.dataset.ex)); }
   else if(a==='exhist'){ exerciseSheet(dec(el.dataset.ex)); }
   else if(a==='pickswap'){ setSwap(dec(el.dataset.orig), dec(el.dataset.new)); }
@@ -4068,6 +4169,10 @@ document.addEventListener('input', e=>{
     scheduleFoodSearch(el.value); return; }
   const s=dstore();
   if(a==='setw'||a==='setr'){ const ex=dec(el.dataset.ex),i=+el.dataset.i; const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{}; arr[i][a==='setw'?'w':'r']=el.value; touch(); save(); }
+  if(a==='setrir'){ const ex=dec(el.dataset.ex),i=+el.dataset.i; const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{};
+    const v=parseFloat(el.value);
+    if(el.value===''||isNaN(v)) delete arr[i].rir; else arr[i].rir=Math.max(0,Math.min(10,v));
+    touch(); save(); }
 });
 /* Keyboard: the app is fully operable without a pointer. */
 document.addEventListener('keydown', e=>{
