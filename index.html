@@ -1701,7 +1701,9 @@ function musclesOf(n){ const s=String(n).toLowerCase(); const out=[]; const has=
     if(has(/lateral raise|shoulder press|overhead press|reverse pec deck|face pull|rear delt/)) out.push('shoulders');
     if(has(/\bcurl\b|triceps|pushdown|close-grip|preacher|hammer|skull/)) out.push('arms');
     if(has(/bench|chest press|incline.*press|flat.*press|cable fly|pec deck|\bfly\b|dips/) && !has(/shoulder press|overhead press|reverse pec deck/)) out.push('chest');
-    if(has(/row|pulldown|pull-up|pullup|chin|straight-arm|pullover/)) out.push('back');
+    /* Word boundaries matter now that this drives a printed set count: "chin"
+       sits inside "maCHINe", and "row" inside "narrow". */
+    if(has(/\brow|pulldown|pull-up|pullup|\bchin|straight-arm|pullover/)) out.push('back');
   }
   return out; }
 
@@ -1853,8 +1855,14 @@ function ensureDefaults(){ let ch=false; if(!data.blockStart){ data.blockStart=t
       if(d.extras){ d.extras.forEach(e=>{ const p=+e.p||0,c=+e.c||0,f=+e.f||0; if(p||c||f) d.log.push({name:e.name||'Extra',p,c,f}); }); delete d.extras; } });
     data.migratedFood=true; ch=true; }
   if(!data.onboarded){
-    /* Anyone with a history predates onboarding — never gate an existing log. */
-    const used = Object.keys(data.dates||{}).length>0 || data.pinHash || data.lockSkipped
+    /* Anyone with a history predates onboarding — never gate an existing log.
+       This must test for *real* entries: render() calls dstore(), which
+       materialises an empty record for today, and counting that as use would
+       mark a half-finished first run as onboarded on its second load. */
+    const logged = Object.keys(data.dates||{}).some(k=>{ const d=data.dates[k]||{};
+      return (d.log&&d.log.length) || (d.sets&&Object.keys(d.sets).length)
+          || d.weight!=null || (d.photos&&d.photos.length) || d.cardio; });
+    const used = logged || data.pinHash || data.lockSkipped
       || (data.foods||[]).length>0 || Object.keys(data.phaseTargets||{}).length>0;
     if(used){ data.onboarded=true; ch=true; }
   }
@@ -1890,13 +1898,14 @@ const KCAL_PER_LB = 3500;      /* conventional energy density of body-mass chang
 const TDEE_WINDOW = 28;        /* days of history the estimate looks at */
 const TDEE_MIN_DAYS = 10;      /* intake days needed before we trust a measurement */
 const TDEE_MIN_SPAN = 10;      /* days the weigh-ins must span */
+const TDEE_MIN_WEIGHINS = 6;   /* below this a single water-weight day IS the slope */
 
 function profile(){ return (data && data.profile) || {}; }
 /* Mifflin-St Jeor, the standard predictive equation. Used as the starting point
    before there is enough logged history to measure the real number. */
 function mifflinBMR(){
   const p=profile(), bw=latestWeightLb();
-  if(!p.sex || !p.age || !p.heightIn || bw==null) return null;
+  if(!p.sex || !p.age || !p.heightIn || !(bw>0)) return null;
   const kg=bw/2.20462, cm=p.heightIn*2.54;
   const base=10*kg + 6.25*cm - 5*p.age;
   return Math.round(base + (p.sex==='male' ? 5 : -161));
@@ -1929,11 +1938,17 @@ function lastWeightBefore(key){
 /* Least-squares slope in lb per day over the smoothed weigh-ins. */
 function weightSlope(days){
   const w=days.map((d,i)=>({i,v:d.w})).filter(x=>x.v!=null);
-  if(w.length<2) return null;
+  /* Both gates matter: a long span with two readings is still a two-point
+     line through whatever the scale said on those two mornings. */
+  if(w.length<TDEE_MIN_WEIGHINS) return null;
   const span=w[w.length-1].i-w[0].i;
   if(span<TDEE_MIN_SPAN) return null;
-  const sm=movingAvg(w.map(x=>({k:x.i,v:x.v})),5);
-  const pts=(sm.length?sm:w.map(x=>({k:x.i,v:x.v}))).map((p,j)=>({x:w[j].i,y:p.v}));
+  /* Smooth by calendar distance, not by position in the list — averaging by
+     index lets an isolated reading borrow from a cluster weeks away, which
+     flattens the slope for anyone who weighs in irregularly. */
+  const pts=w.map(p=>{ let sum=0,n=0;
+    w.forEach(q=>{ if(Math.abs(q.i-p.i)<=2){ sum+=q.v; n++; } });
+    return {x:p.i, y:sum/n}; });
   const n=pts.length;
   const mx=pts.reduce((a,p)=>a+p.x,0)/n, my=pts.reduce((a,p)=>a+p.y,0)/n;
   let num=0, den=0;
@@ -1957,7 +1972,7 @@ function estimateTDEE(asOf){
     const lo=bw!=null?Math.max(1200,Math.round(bw*7)):1200;
     const hi=bw!=null?Math.round(bw*24):6000;
     if(kcal>=lo && kcal<=hi){
-      return {kcal, source:'measured', days:fed.length, span:sl.span,
+      return {kcal, source:'measured', days:fed.length, span:sl.span, points:sl.points,
               trendPerWeek:+(sl.slope*7).toFixed(2), meanIntake:Math.round(mean)};
     }
   }
@@ -1982,7 +1997,7 @@ function tdeeSeries(win){
 /* Target = measured expenditure, plus the surplus or deficit this phase asks for. */
 function adaptiveTarget(id){
   const est=estimateTDEE(); if(!est) return null;
-  const d=phaseDefaults(id), bw=latestWeightLb(); if(bw==null) return null;
+  const d=phaseDefaults(id), bw=latestWeightLb(); if(!(bw>0)) return null;
   const ratePerWeek=bw*(d.goalPct||0)/100;
   let kc=Math.round((est.kcal + ratePerWeek*KCAL_PER_LB/7)/10)*10;
   /* Two floors, whichever bites first: never below ~5% over BMR, and never more
@@ -2410,40 +2425,63 @@ const BARCODE_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
    list should always win. Everything is per 100 g, which is what the database
    stores, and nothing is saved until you confirm it. */
 const OFF_BASE='https://world.openfoodfacts.org';
-let foodSearchT=null, foodSearchSeq=0;
+let foodSearchT=null, foodSearchSeq=0, foodSearchAbort=null;
 function offNum(v){ v=parseFloat(v); return isNaN(v)?0:Math.round(v); }
+/* Defensive by design: one malformed product in a page of twenty must not cost
+   the other nineteen, so every row is mapped inside its own guard. */
 function offMap(pr){
-  const n=pr.nutriments||{};
-  const name=(pr.product_name||'').trim();
-  if(!name) return null;
-  const kc=offNum(n['energy-kcal_100g']);
-  const p=offNum(n.proteins_100g), c=offNum(n.carbohydrates_100g), f=offNum(n.fat_100g);
-  if(!p && !c && !f && !kc) return null;
-  return {name, brand:(pr.brands||'').split(',')[0].trim(), code:pr.code||'', p, c, f,
-          kc: kc || Math.round(p*4+c*4+f*9)};
+  try{
+    if(!pr || typeof pr!=='object') return null;
+    const n=(pr.nutriments && typeof pr.nutriments==='object') ? pr.nutriments : {};
+    /* A non-string name is malformed data, not a product called "12345". */
+    if(typeof pr.product_name!=='string') return null;
+    const name=pr.product_name.trim();
+    if(!name) return null;
+    const kc=offNum(n['energy-kcal_100g']);
+    const p=offNum(n.proteins_100g), c=offNum(n.carbohydrates_100g), f=offNum(n.fat_100g);
+    if(!p && !c && !f && !kc) return null;
+    return {name: name.slice(0,120),
+            brand:(typeof pr.brands==='string'?pr.brands:'').split(',')[0].trim().slice(0,60),
+            code:(typeof pr.code==='string'||typeof pr.code==='number')?String(pr.code).slice(0,32):'', p, c, f,
+            kc: kc || Math.round(p*4+c*4+f*9)};
+  }catch(e){ return null; }
 }
-async function searchExternal(q){
+async function searchExternal(q, signal){
   const fields='code,product_name,brands,nutriments';
+  /* cgi/search.pl is Open Food Facts' full-text endpoint. The v2 route is a
+     tag-filter API and does not do free text, so it goes second purely as a
+     fallback in case the legacy one is ever retired. */
   const urls=[
-    `${OFF_BASE}/api/v2/search?search_terms=${enc(q)}&page_size=20&fields=${fields}`,
-    `${OFF_BASE}/cgi/search.pl?search_terms=${enc(q)}&search_simple=1&action=process&json=1&page_size=20&fields=${fields}`
+    `${OFF_BASE}/cgi/search.pl?search_terms=${enc(q)}&search_simple=1&action=process&json=1&page_size=20&fields=${fields}`,
+    `${OFF_BASE}/api/v2/search?search_terms=${enc(q)}&page_size=20&fields=${fields}`
   ];
   for(const url of urls){
+    if(signal && signal.aborted) return [];
     try{
-      const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),8000);
-      const r=await fetch(url,{signal:ctrl.signal}); clearTimeout(to);
+      const ctrl=new AbortController();
+      const stop=()=>ctrl.abort();
+      if(signal) signal.addEventListener('abort', stop);
+      const to=setTimeout(stop, 5000);
+      let r;
+      try{ r=await fetch(url,{signal:ctrl.signal}); }
+      finally{ clearTimeout(to); if(signal) signal.removeEventListener('abort', stop); }
       if(!r.ok) continue;
       const j=await r.json();
-      const list=(j&&j.products)||[];
+      const list=(j && Array.isArray(j.products)) ? j.products : [];
       const mapped=list.map(offMap).filter(Boolean);
       if(mapped.length) return mapped;
     }catch(e){ /* try the next endpoint */ }
   }
   return [];
 }
+/* Called when the sheet closes, so an abandoned query stops costing anything. */
+function cancelFoodSearch(){
+  clearTimeout(foodSearchT); foodSearchT=null; foodSearchSeq++;
+  if(foodSearchAbort){ try{ foodSearchAbort.abort(); }catch(e){} foodSearchAbort=null; }
+}
 function remoteBox(){ return document.getElementById('foodremote'); }
 function scheduleFoodSearch(q){
-  clearTimeout(foodSearchT);
+  cancelFoodSearch();
   const box=remoteBox(); if(!box) return;
   q=(q||'').trim();
   if(q.length<3){ box.innerHTML=''; return; }
@@ -2451,11 +2489,15 @@ function scheduleFoodSearch(q){
 }
 async function runFoodSearch(q){
   const box=remoteBox(); if(!box) return;
+  if(foodSearchAbort){ try{ foodSearchAbort.abort(); }catch(e){} }
+  const ctrl=(typeof AbortController!=='undefined')? new AbortController() : null;
+  foodSearchAbort=ctrl;
   const seq=++foodSearchSeq;
   box.innerHTML=`<div class="sect-title">Food database</div><div class="hint c">Searching…</div>`;
   let res=[];
-  try{ res=await searchExternal(q); }catch(e){ res=[]; }
-  if(seq!==foodSearchSeq || (state.foodQuery||'').trim()!==q) return;   /* a newer query won */
+  try{ res=await searchExternal(q, ctrl&&ctrl.signal); }catch(e){ res=[]; }
+  if(foodSearchAbort===ctrl) foodSearchAbort=null;
+  if(seq!==foodSearchSeq || !remoteBox() || (state.foodQuery||'').trim()!==q) return;   /* a newer query won */
   if(!res.length){
     box.innerHTML=`<div class="sect-title">Food database</div>
       <div class="hint c">${navigator.onLine===false?'Offline — your own foods are still searchable.':'Nothing found. Create the food and it is yours from then on.'}</div>`;
@@ -2477,7 +2519,8 @@ function logSheet(){
     ${mealSeg(state.sheetMeal)}
     <div class="searchrow">
       <div class="searchwrap">${ic('search')}
-        <input class="field" id="foodq" placeholder="Search my foods" autocomplete="off" data-in="foodsearch" aria-label="Search my foods"></div>
+        <input class="field" id="foodq" placeholder="Search foods" autocomplete="off" data-in="foodsearch"
+          aria-label="Search your saved foods, and the Open Food Facts database"></div>
       <button class="iconsq" data-act="scanbarcode" title="Scan barcode" aria-label="Scan barcode">${ic('barcode')}</button>
     </div>
     <div class="logactions">
@@ -2763,7 +2806,10 @@ function chartSVG(pts,trend,opts){
   const all=pts.map(p=>p.v).concat(trend.map(p=>p.v))
     .concat(s2?s2.pts.map(p=>p.v):[]).concat(opts.target?[opts.target]:[]);
   let min=Math.min(...all), max=Math.max(...all);
-  if(min===max){ min-=1; max+=1; }
+  /* An exact equality test misses a series that is flat but for the last bit
+     of a float — a repeated Epley value averages to values differing by 1 ULP,
+     which would otherwise be stretched into a full-height climb. */
+  if(!(max-min > 1e-6)){ min-=1; max+=1; }
   /* Label the real extremes; pad only the drawing range so marks clear the edge. */
   const hi=max, lo=min;
   const pad=(max-min)*0.14; min-=pad; max+=pad;
@@ -2875,7 +2921,7 @@ function targetsSheet(){
     } else {
       const src=est.source;
       const line = src==='measured'
-        ? `Measured from <b>${est.days} logged days</b> and <b>${est.span+1} days</b> of weigh-ins.`
+        ? `Measured from <b>${est.days} logged days</b> and <b>${est.points} weigh-ins</b> over ${est.span+1} days.`
         : src==='formula'
           ? `Estimated from your height, age and activity. It switches to measuring your real expenditure after about two weeks of logging.`
           : `Estimated from bodyweight alone. Add your details in Settings, and keep logging, for a real measurement.`;
@@ -3014,23 +3060,23 @@ const VOLUME_LANDMARKS=[
 ];
 function weeklyVolume(keys){
   const counts={}; VOLUME_LANDMARKS.forEach(m=>counts[m.id]=0);
-  let unmatched=0;
+  let unmatched=0, total=0;
   (keys||weekKeys()).forEach(k=>{
     const sets=((data.dates[k]||{}).sets)||{};
     Object.keys(sets).forEach(ex=>{
       const done=(sets[ex]||[]).filter(st=>st&&st.done).length;
       if(!done) return;
+      total+=done;                       /* each set counted once, whatever it trains */
       const ms=musclesOf(ex);
       if(!ms.length){ unmatched+=done; return; }
       ms.forEach(m=>{ if(counts[m]!=null) counts[m]+=done; });
     });
   });
-  return {counts, unmatched};
+  return {counts, unmatched, total};
 }
 function volumeCard(){
-  const {counts, unmatched}=weeklyVolume();
-  const total=Object.values(counts).reduce((a,n)=>a+n,0);
-  if(!total && !unmatched) return `<div class="card"><div class="card-k"><span>Volume</span></div>
+  const {counts, unmatched, total}=weeklyVolume();
+  if(!total) return `<div class="card"><div class="card-k"><span>Volume</span></div>
     <div class="empty">${ic('dumbbell')}Tick sets off as you train and your weekly volume by muscle appears here.</div></div>`;
   const rows=VOLUME_LANDMARKS.map(m=>{
     const n=counts[m.id];
@@ -3065,9 +3111,11 @@ function volumeCard(){
 function energyCard(){
   const est=estimateTDEE();
   if(!est) return '';
-  const intake=energyDays(42, addDays(todayKey(),-1)).filter(d=>d.kc!=null).map(d=>({k:d.k, v:d.kc}));
-  const tdee=tdeeSeries(42);
-  const mean=intake.length? Math.round(intake.reduce((a,d)=>a+d.v,0)/intake.length) : 0;
+  /* Same window as the estimate, or the three figures contradict each other. */
+  const intake=energyDays(TDEE_WINDOW, addDays(todayKey(),-1)).filter(d=>d.kc!=null).map(d=>({k:d.k, v:d.kc}));
+  const tdee=tdeeSeries(TDEE_WINDOW);
+  const mean=est.meanIntake!=null ? est.meanIntake
+    : (intake.length? Math.round(intake.reduce((a,d)=>a+d.v,0)/intake.length) : 0);
   const net=mean-est.kcal;
   const measured=est.source==='measured';
   let out=`<div class="card span2"><div class="card-k"><span>Energy</span>
@@ -3211,6 +3259,7 @@ function closeSheet(){
   const sh=document.getElementById('sheet');
   if(!sh.classList.contains('on')) return;
   sh.classList.remove('on','over-lock');
+  cancelFoodSearch();
   const bg=document.querySelector('.sheet-bg'); bg.classList.remove('on','over-lock');
   document.body.classList.remove('sheet-open');
   document.querySelectorAll('#app > [inert]').forEach(n=>{ n.inert=false; });
@@ -3440,7 +3489,7 @@ function onbValidate(){
   let msg='';
   if(!onb.sex) msg='Pick one so the formula can estimate your expenditure.';
   else if(isNaN(age)||age<13||age>100) msg='Enter an age between 13 and 100.';
-  else if(bw==null) msg='Enter your current bodyweight.';
+  else if(bw==null || bw<50 || bw>800) msg='Enter your current bodyweight.';
   else if(h==null||h<48||h>90) msg='Enter your height.';
   if(err) err.textContent=msg;
   return !msg;
@@ -3528,7 +3577,7 @@ function mergeRemote(remote){ if(!remote||typeof remote!=='object') return;
     let pick; if(a&&b){ pick=((b._u||0)>(a._u||0))?Object.assign({},b):Object.assign({},a); } else pick=Object.assign({}, a||b);
     if(a&&a.photos) pick.photos=a.photos; out[k]=pick; });
   data.dates=out;
-  if((remote.updatedAt||0)>(data.updatedAt||0)){ ['unit','restDefault','deloadWeeks','blockStart','pinHash','lockSkipped','foods','rotationPos','rotationByPhase','phase','phaseTargets','phaseMode','focus','presetsRemoved','mealsV3'].forEach(f=>{ if(remote[f]!==undefined) data[f]=remote[f]; }); data.updatedAt=remote.updatedAt; }
+  if((remote.updatedAt||0)>(data.updatedAt||0)){ ['unit','restDefault','deloadWeeks','blockStart','pinHash','lockSkipped','foods','rotationPos','rotationByPhase','phase','phaseTargets','phaseMode','focus','presetsRemoved','mealsV3','profile','onboarded'].forEach(f=>{ if(remote[f]!==undefined) data[f]=remote[f]; }); data.updatedAt=remote.updatedAt; }
 }
 let pushTimer=null;
 function schedulePush(){ if(!sync.enabled) return; setSyncDot('sync'); clearTimeout(pushTimer); pushTimer=setTimeout(async()=>{ try{ await supPush(); sync.last=nowMs(); saveSync(); setSyncDot('ok'); }catch(e){ setSyncDot('err'); } }, 1600); }
