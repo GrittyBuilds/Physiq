@@ -1075,6 +1075,10 @@
     font-size:var(--fs-sm);font-weight:700;color:var(--accent);flex:none;
     pointer-events:auto;transition:background var(--d-1) var(--ease)}
   .toast-undo:hover{background:var(--accent-soft)}
+  /* The child's own pointer-events:auto survives the parent's :none, so the
+     faded button keeps eating taps over whatever is behind it. Both halves are
+     needed — the parent rule below is not enough on its own. */
+  .toast:not(.on) .toast-undo{pointer-events:none}
   /* Only a *visible* undo toast takes pointer events — otherwise the faded
      element keeps eating taps over the content behind it. */
   .toast.on:has(.toast-undo){pointer-events:auto}
@@ -1842,6 +1846,7 @@ const SPLITS = {
    and nothing else — no clock, no close, no way to ask "how long was that, and
    was it better than last time". The start is stamped by the first thing you do
    to a set, not by a Start button nobody would press. */
+const SESSION_MAX_MS=5*3600000;
 function markSessionStart(k){
   const s=dstore(k); if(s.sess && s.sess.s) return;
   s.sess=Object.assign({}, s.sess, {s:nowMs()});
@@ -1862,7 +1867,19 @@ function sessionStats(k){
     if(any){ exs++; musclesOfKey(ex).forEach(m=>{ muscles[m]=(muscles[m]||0)+any; }); }
   });
   if(!sets) return null;
-  const dur=(s.sess&&s.sess.s&&s.sess.e)? Math.round((s.sess.e-s.sess.s)/60000) : null;
+  /* Duration is DERIVED, never stored — clamping the start timestamp to make a
+     number look reasonable threw away the only record of when you actually
+     began. Two things disqualify it, and both report nothing rather than a
+     figure the user would have to distrust:
+       - the clock started on a different day from the one being recorded
+         (back-filling last Tuesday stamps the clock today), and
+       - the span is longer than any real session, i.e. Finish was pressed on a
+         tab left open since the morning. */
+  const started=s.sess&&s.sess.s;
+  const span=(started&&s.sess.e)? s.sess.e-started : null;
+  const plausible=span!=null && span>=0 && span<=SESSION_MAX_MS
+                  && keyOf(new Date(started))===k;
+  const dur=plausible? Math.round(span/60000) : null;
   return {sets, tonnage:Math.round(tonnage), reps, exs, warm, muscles, dur,
           started:s.sess&&s.sess.s};
 }
@@ -1897,7 +1914,7 @@ function todayPRs(k){
     const best=(s.sets[ex]||[]).filter(countsAsWork).reduce((b,st)=>{
       const w=parseFloat(st.w),r=parseInt(st.r,10);
       return (!isNaN(w)&&w>0&&!isNaN(r)&&r>0)? Math.max(b, w*(1+r/30)) : b; },0);
-    if(best>0 && best>prevBestE(ex)+0.01) out.push({ex, e:best});
+    if(best>0 && best>prevBestE(ex,k)+0.01) out.push({ex, e:best});
   });
   return out;
 }
@@ -1951,14 +1968,19 @@ function musclesOf(n){ const s=String(n).toLowerCase(); const out=[]; const has=
   /* Conditioning first, and it short-circuits. "Rowing Machine" and "Assault
      Bike" are not back work, and letting \brow reach them would quietly add
      cardio to the weekly pulling volume. */
-  if(has(/treadmill|assault bike|\bbike\b|elliptical|stair ?(climber|master)|jump rope|skipping|sled|farmer|rowing machine|\berg\b|swim|\brun\b|walk/)) return out;
+  if(has(/treadmill|assault bike|\bbike\b|elliptical|stair ?(climber|master)|jump rope|skipping|\bsled\b|farmer('s)? (carry|walk)|rowing machine|\berg\b|swim/)) return out;
   if(has(/squat|leg press|hack|deadlift|romanian|lunge|leg extension|leg curl|hip thrust|glute|good morning|back extension|hyperextension|step-up|nordic|abductor|adductor|pull-through|rack pull/)) out.push('legs');
   if(has(/calf|tibialis/)) out.push('calves');
   if(has(/leg raise|knee raise|crunch|ab wheel|woodchop|captain|rollout|plank|sit-up|situp|dragon flag|pallof|toes-to-bar|hollow/)) out.push('abs');
   if(out.indexOf('legs')<0){
-    if(has(/lateral raise|shoulder press|overhead press|reverse pec deck|face pull|rear delt|upright row|front raise|y-raise|arnold|behind-the-neck|\bz press\b|landmine press|push press|delt/)) out.push('shoulders');
+    if(has(/lateral raise|shoulder press|overhead press|reverse pec deck|face pull|rear delt|reverse fly|upright row|front raise|y-raise|arnold|behind-the-neck|\bz press\b|landmine press|push press|delt/)) out.push('shoulders');
     if(has(/\bcurl\b|triceps|pushdown|close-grip|preacher|hammer|skull|\bjm press\b|tate press|kickback|bench dip|\b21s\b/)) out.push('arms');
-    if(has(/bench|chest press|incline.*press|flat.*press|decline.*press|cable fly|pec deck|\bfly\b|dips|push-?up|guillotine|svend/) && !has(/shoulder press|overhead press|reverse pec deck|bench dip|push press/)) out.push('chest');
+    /* A reverse fly is a rear-delt movement, not a chest one, and \bfly\b used
+       to claim every one of them — silently adding rear-delt work to weekly
+       chest volume, and giving "Bent-over DB Reverse Fly" chest as its ONLY
+       muscle. */
+    if(has(/bench|chest press|incline.*press|flat.*press|decline.*press|cable fly|pec deck|\bfly\b|dips|push-?up|guillotine|svend/)
+       && !has(/shoulder press|overhead press|reverse pec deck|reverse fly|rear delt|bench dip|push press/)) out.push('chest');
     /* Word boundaries matter now that this drives a printed set count: "chin"
        sits inside "maCHINe", and "row" inside "narrow". Upright rows are a
        delt movement and are excluded here, not silently counted as pulling. */
@@ -2071,10 +2093,22 @@ function writeProgram(){
    deletion wins the merge rather than losing the tie. */
 function mirrorProgram(){
   const k=todayKey();
+  /* Deliberately NOT touch()ed. Bumping _u on a past day to tidy up a stale
+     mirror would make this device's copy of that date the newer one, and the
+     next merge would then overwrite a workout logged on another device that
+     day. reconcileProgram picks the newest mirror by the program's own clock,
+     so a stale copy surviving elsewhere is harmless; this is local tidying. */
   Object.keys(data.dates||{}).forEach(d=>{
-    if(d!==k && data.dates[d] && data.dates[d].pgm){ delete data.dates[d].pgm; touch(d); }
+    if(d!==k && data.dates[d] && data.dates[d].pgm) delete data.dates[d].pgm;
   });
-  if(!data.program) return;
+  /* And when the program is gone, today's mirror must go with it — otherwise
+     "Reset to the built-in split" is undone by reconcileProgram on the very
+     next load, from the copy this function left behind. */
+  if(!data.program){
+    const d0=data.dates[k];
+    if(d0 && d0.pgm){ delete d0.pgm; touch(k); }
+    return;
+  }
   dstore(k).pgm=JSON.parse(JSON.stringify(data.program));
   touch(k);
 }
@@ -2226,6 +2260,24 @@ function storageChars(){
   if(_blobChars==null){ try{ _blobChars=JSON.stringify(data).length; }catch(e){ _blobChars=0; } }
   return _blobChars;
 }
+/* The rollback snapshot is a second full copy under the same origin quota, so
+   leaving it out of the meter meant writes started failing at around 58% of the
+   number the app was reporting, with no warning ever shown. It is also expired:
+   a rollback is a "something just broke" action taken within days, not months. */
+const SNAP_TTL_DAYS=14;
+let _snapChars=null;
+function snapshotChars(){
+  if(_snapChars==null){ try{ const r=localStorage.getItem(PREV_KEY); _snapChars=r?r.length:0; }catch(e){ _snapChars=0; } }
+  return _snapChars;
+}
+function expireSnapshot(){
+  const s=prevSnapshot(); if(!s) return;
+  if(nowMs()-(s.at||0) > SNAP_TTL_DAYS*86400000){
+    try{ localStorage.removeItem(PREV_KEY); }catch(e){}
+    _snapChars=null;
+  }
+}
+function totalChars(){ return storageChars()+snapshotChars(); }
 function photoChars(){ let n=0;
   Object.keys(data.dates||{}).forEach(k=>{ ((data.dates[k]||{}).photos||[]).forEach(p=>{ n+=String(p).length; }); });
   return n; }
@@ -2248,7 +2300,7 @@ function storageAlertHTML(){
     return {cls:'', html:`${ic('info','ic')}<div><b>Saving is blocked here.</b> This preview cannot write to storage —
       open the file in your browser, or add it to your Home Screen, and your data will persist.</div>`};
   }
-  const used=storageChars();
+  const used=totalChars();
   if(used > STORAGE_BUDGET*STORAGE_WARN){
     const ph=photoChars();
     return {cls:'', html:`${ic('info','ic')}<div><b>Storage is nearly full</b> — about ${fmtMB(used)} of ${fmtMB(STORAGE_BUDGET)} used${ph>200000?`, ${fmtMB(ph)} of it progress photos`:''}.
@@ -2256,9 +2308,16 @@ function storageAlertHTML(){
   }
   return null;
 }
+/* Only rewrites when the message actually changes. This is a live region, and
+   re-setting identical innerHTML on every render made a screen reader announce
+   the storage warning again on every unrelated action. */
+let _alertHTML='';
 function paintStorageAlert(){
   const el=document.getElementById('salert'); if(!el) return;
   const a=storageAlertHTML();
+  const next=a? a.html : '';
+  if(next===_alertHTML) return;
+  _alertHTML=next;
   if(!a){ el.hidden=true; el.innerHTML=''; el.className='salert'; return; }
   el.hidden=false; el.className='salert '+a.cls; el.innerHTML=a.html;
 }
@@ -2321,7 +2380,12 @@ function snapshotBlob(from){
        with it, so past the halfway mark we skip it and say so rather than
        gambling the data we are trying to protect. */
     if(raw.length*2 > STORAGE_BUDGET){ SNAP_SKIPPED=true; return; }
+    /* Replay-safe: a retried migration must not overwrite the pre-migration
+       copy with one taken after a partial upgrade. */
+    const have=prevSnapshot();
+    if(have && have.v===from) return;
     localStorage.setItem(PREV_KEY, JSON.stringify({at:nowMs(), v:from, blob:raw}));
+    _snapChars=null;
   }catch(e){ SNAP_SKIPPED=true; }
 }
 function prevSnapshot(){
@@ -2339,16 +2403,17 @@ function runMigrations(){
   MIGRATIONS.forEach(m=>{ if(m.v>from && m.v<=SCHEMA_V){ try{ m.up(data); }catch(e){} } });
   data.v=SCHEMA_V;
   persistLocal();
-  /* If that write did not land, the blob on disk is still the old shape while
-     this session believes it migrated. Put the version back so the next boot
-     tries again instead of skipping the chain over data that never changed. */
-  if(!STORAGE_OK) data.v=from;
+  /* If the write did not land, memory is still correctly migrated and stamped —
+     the next boot simply migrates the on-disk copy again, which is why every
+     migration has to be replay-safe. Reverting `v` here was worse: it pushed a
+     fully migrated blob labelled with the OLD version, and every other device
+     then took the downgrade path and discarded its settings. */
 }
 let saveTimer=null;
 function save(){
   clearTimeout(saveTimer);
   saveTimer=setTimeout(()=>{ try{ const s=JSON.stringify(data); localStorage.setItem(KEY, s);
-      _blobChars=s.length; STORAGE_OK=true; STORAGE_ERR=null; lastSaveOk=nowMs(); }
+      _blobChars=s.length; STORAGE_OK=true; STORAGE_ERR=null; lastSaveOk=nowMs(); paintStorageAlert(); }
     catch(e){ _blobChars=null; noteStorageError(e); paintStorageAlert(); }
     schedulePush(); }, 150);
 }
@@ -2730,8 +2795,7 @@ function viewToday(){
   if(fin && fin.e){
     const st=sessionStats(curKey());
     if(st){ const prs=todayPRs(curKey());
-      out+=`<button class="card recap tap" data-act="sessrecap" data-k="${curKey()}"
-        aria-label="Session summary for ${longDayLabel(curKey())}">
+      out+=`<button class="card recap tap" data-act="sessrecap" data-k="${curKey()}">
         <div class="recap-l">
           <div class="recap-h">${ic('check')} Session complete</div>
           <div class="recap-m num">${st.sets} sets · ${fmtK(st.tonnage)} ${data.unit}${st.dur!=null?' · '+fmtDur(st.dur):''}</div>
@@ -3046,10 +3110,16 @@ function mealOf(e){ return (e && mealList().some(m=>m.id===e.meal)) ? e.meal : f
 function entryKc(e){ return (+e.p||0)*4 + (+e.c||0)*4 + (+e.f||0)*9; }
 /* The last meal that has already started. Before the first one (small hours),
    the day has not begun — that food belongs to breakfast, not to last night. */
+/* The meal with the LATEST start hour that has already begun — not the last one
+   in list order. Those differ the moment someone reorders their meals, and the
+   food then lands in whichever meal happens to sit at the bottom of the list. */
 function defaultMeal(){
   const h=new Date().getHours(), L=mealList();
-  let pick=L[0];
-  L.forEach(m=>{ if((m.h!=null?m.h:0)<=h) pick=m; });
+  let pick=null;
+  L.forEach(m=>{ const mh=(m.h!=null?m.h:0);
+    if(mh<=h && (!pick || mh>=(pick.h!=null?pick.h:0))) pick=m; });
+  if(!pick){ /* before the earliest meal starts: the day has not begun */
+    pick=L.reduce((a,m)=>((m.h!=null?m.h:0)<((a.h!=null?a.h:0))?m:a), L[0]); }
   return pick.id;
 }
 function mealSeg(sel){ return `<div class="seg sm scroll mealseg" role="group" aria-label="Meal">`
@@ -3139,10 +3209,10 @@ function viewFuel(){
   const anyLogged=log.length>0;
   mealList().forEach(m=>{ const items=buckets[m.id];
     const sub=items.reduce((a,x)=>a+entryKc(x.e),0);
-    out+=`<div class="mealsec"><div class="meal-h"><div class="meal-nm">${m.name}${items.length?` <span class="meal-ct">${items.length}</span>`:''}</div>
+    out+=`<div class="mealsec"><div class="meal-h"><div class="meal-nm">${esc(m.name)}${items.length?` <span class="meal-ct">${items.length}</span>`:''}</div>
       <div class="meal-r"><span class="meal-sub">${items.length?sub.toLocaleString()+' kcal':''}</span>
-      ${items.length?`<button class="rowbtn" data-act="copymeal" data-m="${m.id}" aria-label="Copy ${m.name} to another meal" title="Copy to another meal">${ic('copy')}</button>`:''}
-      <button class="rowbtn accent" data-act="addmeal" data-m="${m.id}" aria-label="Add food to ${m.name}">${ic('plus')}</button></div></div>`;
+      ${items.length?`<button class="rowbtn" data-act="copymeal" data-m="${m.id}" aria-label="Copy ${esc(m.name)} to another meal" title="Copy to another meal">${ic('copy')}</button>`:''}
+      <button class="rowbtn accent" data-act="addmeal" data-m="${m.id}" aria-label="Add food to ${esc(m.name)}">${ic('plus')}</button></div></div>`;
     if(!items.length){
       /* An empty meal is the moment you want to repeat an earlier one, so the
          empty state does that job instead of just reporting itself. */
@@ -3476,7 +3546,7 @@ function copyIntoSheet(dest){
     .map(m=>({m, items:log.filter(e=>mealOf(e)===m.id)}))
     .filter(g=>g.items.length);
   if(!groups.length){ showToast('Nothing logged yet today','err'); return; }
-  openSheet(`<h3 id="sheetTitle">Copy into ${mealName(dest)}</h3>
+  openSheet(`<h3 id="sheetTitle">Copy into ${esc(mealName(dest))}</h3>
     <div class="hint c" style="margin-bottom:var(--sp-4)">Pick the meal to repeat.</div>
     <div class="menulist">${groups.map(g=>`
       <button class="menurow" data-act="copyfrom" data-from="${g.m.id}" data-to="${dest}">${ic('copy')}
@@ -3550,33 +3620,44 @@ function seriesSlope(pts, minN, minSpanDays){
    without the waist moving is the whole question of a bulk, and it is answered
    with two slopes over the same window. */
 function bulkQuality(){
+  /* Everything here is computed in the CANONICAL units the app stores —
+     pounds and inches — and converted only for display. The thresholds below
+     are physical quantities; comparing them against whatever unit the user
+     happens to be viewing gave the same body opposite verdicts in lb and kg. */
   const w=Object.keys(data.dates||{}).filter(k=>data.dates[k].weight!=null).sort()
-    .map(k=>({k, v:toUnitNum(data.dates[k].weight)}));
+    .map(k=>({k, v:data.dates[k].weight}));                       /* lb */
   const cutoff=addDays(todayKey(),-56);
   const ws=seriesSlope(w.filter(p=>p.k>=cutoff), 8, 21);
-  const ms=seriesSlope(measSeries('waist').filter(p=>p.k>=cutoff), 3, 21);
+  const waistRaw=Object.keys(data.dates||{}).sort()
+    .filter(k=>{ const m=(data.dates[k]||{}).meas; return m && m.waist!=null; })
+    .map(k=>({k, v:data.dates[k].meas.waist}));                   /* inches */
+  const ms=seriesSlope(waistRaw.filter(p=>p.k>=cutoff), 3, 21);
   if(!ws||!ms) return null;
-  const wPerWk=ws.slope*7, mPerWk=ms.slope*7;
+  const wPerWk=ws.slope*7, mPerWk=ms.slope*7;                     /* lb/wk, in/wk */
   const u=data.unit, mu=measUnit();
   const gain=wPerWk>0.15, loss=wPerWk<-0.15;
   const waistUp=mPerWk>0.02, waistDown=mPerWk<-0.02;
   let verdict, tone;
   if(gain && !waistUp){ verdict='Weight is going on and your waist is not. That is the version of a bulk you want.'; tone='good'; }
   else if(gain && waistUp){
-    /* Roughly: on a lean gain the waist should move far less than the scale. */
+    /* Inches of waist per pound of bodyweight. An inch of waist is very roughly
+       5–8 lb of fat, so gaining pure fat runs around 0.15 in/lb and gaining
+       mostly muscle around 0.03. A half-and-half gain sits near 0.08, which is
+       where this draws the line. The old 0.35 was above the all-fat rate — it
+       could never fire, so every bulk was reported as lean. */
     const ratio=Math.abs(mPerWk)/Math.abs(wPerWk);
-    verdict = ratio>0.35
+    verdict = ratio>0.08
       ? 'Your waist is climbing about as fast as your weight — a good share of this is fat. Pulling calories back toward maintenance would slow it.'
       : 'Weight and waist are both up, but the waist much more slowly. That is a normal lean gain.';
-    tone = ratio>0.35 ? 'warn' : 'good';
+    tone = ratio>0.08 ? 'warn' : 'good';
   }
   else if(loss && waistDown){ verdict='Weight and waist are both coming down. The loss is coming off where you want it.'; tone='good'; }
   else if(loss && !waistDown){ verdict='You are losing weight but your waist has not moved. Worth holding calories here and checking your protein before cutting further.'; tone='warn'; }
   else if(!gain && !loss && waistDown){ verdict='Scale flat, waist down — a recomposition, and the only way you would ever see it is by measuring.'; tone='good'; }
   else { verdict='Weight and waist are both holding steady.'; tone='flat'; }
   return {verdict, tone,
-    wTxt:(wPerWk>0?'+':'')+wPerWk.toFixed(2)+' '+u+'/wk',
-    mTxt:(mPerWk>0?'+':'')+mPerWk.toFixed(2)+' '+mu+'/wk',
+    wTxt:(wPerWk>0?'+':'')+toUnitNum(wPerWk).toFixed(2)+' '+u+'/wk',
+    mTxt:(mPerWk>0?'+':'')+measToUnit(mPerWk).toFixed(2)+' '+mu+'/wk',
     weeks:Math.round(Math.min(ws.span,ms.span)/7)};
 }
 /* "Measured on today" is not a sentence. Today and yesterday take no
@@ -3590,10 +3671,14 @@ function measWhen(){
 function measCard(){
   const sites=measSites(), s=dstore(), cur=s.meas||{};
   const rows=sites.map(m=>{
+    /* Relative to the day being VIEWED, not to the newest two readings ever —
+       otherwise paging back to last month shows this month's change beside last
+       month's number. */
     const ser=measSeries(m.id);
-    const last=ser.length? ser[ser.length-1] : null;
-    const prev=ser.length>1? ser[ser.length-2] : null;
-    const d=(last&&prev)? last.v-prev.v : null;
+    const upto=ser.filter(p=>p.k<=curKey());
+    const last=upto.length? upto[upto.length-1] : null;
+    const prev=upto.length>1? upto[upto.length-2] : null;
+    const d=(last&&prev&&last.k===curKey())? last.v-prev.v : null;
     const val=cur[m.id]!=null ? measToUnit(cur[m.id]).toFixed(1) : '';
     return `<div class="measrow">
       <label class="measlab" for="meas_${m.id}">${m.name}<small>${m.hint}</small></label>
@@ -3731,7 +3816,9 @@ function chartSVG(pts,trend,opts){
 function keyOf(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function currentMonday(){ const d=new Date(); const off=(d.getDay()+6)%7; d.setDate(d.getDate()-off); d.setHours(0,0,0,0); return d; }
 function weekKeys(){ const m=currentMonday(); return Array.from({length:7},(_,i)=>{ const d=new Date(m); d.setDate(m.getDate()+i); return keyOf(d); }); }
-function sessionDone(k){ const s=data.dates[k]; return !!(s&&s.sets&&Object.values(s.sets).some(a=>a&&a.some(x=>x&&x.done))); }
+/* A day where you ticked a warm-up and left is not a completed session — the
+   rest of the app already agrees, this was the last place that did not. */
+function sessionDone(k){ const s=data.dates[k]; return !!(s&&s.sets&&Object.values(s.sets).some(a=>a&&a.some&&a.some(countsAsWork))); }
 function macrosHit(k){ const t=dayTotals(k); return t.kc>=TARGET.kc-150&&t.kc<=TARGET.kc+150&&t.p>=TARGET.p-15; }
 function cardioDone(k){ const s=data.dates[k]; return !!(s&&s.cardio); }
 function viewStats(){
@@ -3814,16 +3901,7 @@ let _pgJump=null;
 /* Every mutation goes through here: materialise on first write, apply, bump the
    program's own clock, mirror, persist. Nothing edits data.program directly. */
 function pgEdit(fn){ const p=ensureProgram(); fn(p); writeProgram(); return p; }
-/* A one-field sheet, for the two places a full form would be absurd. */
-let _promptFn=null;
-function promptSheet(title, body, value, onSave){
-  _promptFn=onSave;
-  openSheet(`<h3 id="sheetTitle">${esc(title)}</h3>
-    <div class="hint c" style="margin-bottom:var(--sp-4)">${esc(body)}</div>
-    <input class="field" id="promptv" value="${esc(value||'')}" maxlength="40" aria-label="${esc(title)}">
-    <button class="btn" data-act="promptok">Save</button>`);
-  setTimeout(()=>{ const f=document.getElementById('promptv'); if(f){ f.focus(); f.select(); } },60);
-}
+
 const TECHNIQUES=[['','None'],['myo','Myo-reps'],['drop','Drop set'],['RP','Rest-pause']];
 
 function programSheet(){
@@ -4029,8 +4107,12 @@ function viewPRs(){
       <div class="pr-d">${new Date(p.date+'T00:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</div></div>${e}</div>`; });
   return out;
 }
-function prevBestE(ex){ let best=0; const tk=todayKey();
-  Object.keys(data.dates).forEach(k=>{ if(k===tk) return; const arr=(data.dates[k].sets||{})[ex]||[];
+/* `before` defaults to today, but the session sheet asks about a past date and
+   used to compare it against every date except today — so a back-dated session
+   was measured against workouts that happened after it, and could never report
+   a record. */
+function prevBestE(ex, before){ let best=0; const tk=before||todayKey();
+  Object.keys(data.dates).forEach(k=>{ if(k>=tk) return; const arr=(data.dates[k].sets||{})[ex]||[];
     arr.forEach(st=>{ if(!countsAsWork(st)) return; const w=parseFloat(st.w),r=parseInt(st.r,10); if(!isNaN(w)&&w>0&&!isNaN(r)&&r>0){ const e=w*(1+r/30); if(e>best) best=e; } }); });
   return best; }
 let toastT=null;
@@ -4192,7 +4274,9 @@ function viewWeek(){
   const sessions=keys.filter(k=>sessionDone(k)).length;
   const macroDays=keys.filter(macrosHit).length;
   const cardioDays=keys.filter(cardioDone).length;
-  const setsDone=keys.reduce((tot,k)=>{ const s=data.dates[k]; if(!s||!s.sets) return tot; return tot+Object.values(s.sets).reduce((a,arr)=>a+((arr||[]).filter(x=>x&&x.done).length),0); },0);
+  /* Working sets, matching the volume card directly beneath this tile. Counting
+     warm-ups here made the same week report two different numbers. */
+  const setsDone=keys.reduce((tot,k)=>{ const s=data.dates[k]; if(!s||!s.sets) return tot; return tot+Object.values(s.sets).reduce((a,arr)=>a+((arr||[]).filter(countsAsWork).length),0); },0);
   const wk=keys.filter(k=>data.dates[k]&&data.dates[k].weight!=null);
   let wdelta=null;
   if(wk.length>=2){ wdelta=toUnitNum(data.dates[wk[wk.length-1]].weight)-toUnitNum(data.dates[wk[0]].weight); }
@@ -4294,6 +4378,7 @@ function openSheet(html){
   if(!sheetOpen()) _sheetReturn=document.activeElement;
   sh.innerHTML=`<div class="grabber" aria-hidden="true"></div>`
     +`<button class="sheet-close" data-act="closesheet2" aria-label="Close">${ic('close')}</button>`+html;
+  sh.inert=false; sh.removeAttribute('aria-hidden');
   document.querySelector('.sheet-bg').classList.add('on');
   document.body.classList.add('sheet-open');
   /* inert gives focus-trapping, AT-hiding and pointer-blocking in one go.
@@ -4304,8 +4389,18 @@ function openSheet(html){
   if(_undoFn){ _undoFn=null; document.getElementById('toast').classList.remove('on'); }
   /* Focus the dialog itself. Focusing the first control would raise the
      keyboard on touch and paint a focus ring that reads as a selection. */
-  requestAnimationFrame(()=>{ sh.classList.add('on'); sh.focus({preventScroll:true}); });
+  requestAnimationFrame(()=>{ sh.classList.add('on');
+    /* When a sheet is REPLACED by an edit made inside it, put focus back on
+       the control that was used rather than dumping it on the dialog — the
+       editor re-renders on every tap, and losing your place each time makes
+       it unusable with a keyboard or a screen reader. */
+    let back=null;
+    if(_refocus){ try{ back=sh.querySelector(_refocus); }catch(e){} _refocus=null; }
+    (back||sh).focus({preventScroll:true}); });
 }
+let _refocus=null;
+/* Selector, evaluated inside the sheet after the next openSheet paints. */
+function refocusAfter(sel){ _refocus=sel; }
 function closeSheet(){
   const sh=document.getElementById('sheet');
   if(!sh.classList.contains('on')) return;
@@ -4314,6 +4409,11 @@ function closeSheet(){
   const bg=document.querySelector('.sheet-bg'); bg.classList.remove('on','over-lock');
   document.body.classList.remove('sheet-open');
   document.querySelectorAll('#app > [inert]').forEach(n=>{ n.inert=false; });
+  /* AFTER the loop above, which clears inert from every direct child of #app —
+     and the sheet is one of them. The sheet only slides away, keeping its
+     markup, so without this its buttons stay focusable and a Tab from the page
+     scrolls the invisible dialog back over the app. */
+  sh.inert=true; sh.setAttribute('aria-hidden','true');
   _confirmFn=null; _sheetSnapshot=null;
   if(_sheetReturn && document.contains(_sheetReturn)) _sheetReturn.focus({preventScroll:true});
   _sheetReturn=null;
@@ -4401,21 +4501,22 @@ function promptSheet(o){
 /* What is actually taking up the space, so "export a backup" is not the only
    advice we can give. Photos are almost always the answer. */
 function storageSheet(){
-  const total=storageChars(), ph=photoChars();
+  const total=storageChars(), ph=photoChars(), snap=snapshotChars();
   let sets=0, log=0, nPhotos=0;
   Object.keys(data.dates||{}).forEach(k=>{ const d=data.dates[k]||{};
     sets+=JSON.stringify(d.sets||{}).length; log+=JSON.stringify(d.log||[]).length;
     nPhotos+=(d.photos||[]).length; });
   const foods=JSON.stringify(data.foods||[]).length;
   const other=Math.max(0,total-ph-sets-log-foods);
-  const pct=Math.min(100,Math.round(total/STORAGE_BUDGET*100));
+  const pct=Math.min(100,Math.round((total+snap)/STORAGE_BUDGET*100));
   const rows=[['Progress photos',ph,nPhotos+(nPhotos===1?' photo':' photos')],
               ['Workout sets',sets,''],['Food log',log,''],
-              ['Saved foods',foods,(data.foods||[]).length+' items'],['Everything else',other,'']]
+              ['Saved foods',foods,(data.foods||[]).length+' items'],['Everything else',other,''],
+              ['Upgrade backup',snap,'auto-deleted after '+SNAP_TTL_DAYS+' days']]
     .filter(r=>r[1]>0).sort((a,b)=>b[1]-a[1]);
   openSheet(`<h3 id="sheetTitle">Storage</h3>
     <div class="hint c" style="margin-bottom:var(--sp-4)">Physiq keeps everything on this device. Browsers cap that at roughly ${fmtMB(STORAGE_BUDGET)} — past it, nothing new can save.</div>
-    <div class="setprog"><div class="row"><span class="nm">${fmtMB(total)} used</span><span class="ct"><b>${pct}</b>%</span></div>
+    <div class="setprog"><div class="row"><span class="nm">${fmtMB(total+snap)} used</span><span class="ct"><b>${pct}</b>%</span></div>
       <div class="bar"><i data-fill="${pct}%" style="width:${pct}%;background:${pct>82?'var(--warn)':'var(--good)'}"></i></div></div>
     <div class="sets">${rows.map(r=>`<div class="setrow between"><span style="font-weight:600;font-size:var(--fs-sm)">${r[0]}${r[2]?` <span class="hint">· ${r[2]}</span>`:''}</span><span class="hint nowrap num">${fmtMB(r[1])}</span></div>`).join('')}</div>
     <div class="hint lead" style="margin-top:var(--sp-4)">${ph>total*0.4
@@ -4427,7 +4528,7 @@ function menuSheet(){
   const row=(act,icon,label,sub,extra,cls)=>`<button class="menurow ${cls||''}" data-act="${act}">${ic(icon)}
     <span class="mr-t">${label}${sub?`<small>${sub}</small>`:''}</span>${extra||`<span class="chev">${ic('chevright')}</span>`}</button>`;
   const vm=data.viewMode||'auto';
-  const used=storageChars(), ph=photoChars(), snap=prevSnapshot();
+  const used=totalChars(), ph=photoChars(), snap=prevSnapshot();
   const usedTxt=fmtMB(used)+' of about '+fmtMB(STORAGE_BUDGET)+' used'+(ph>200000?' · '+fmtMB(ph)+' photos':'');
   const lockRows = data.pinHash
     ? row('locknow','lock','Lock now') + row('setpin','lock','Change PIN') + row('rmpin','unlock','Remove PIN lock')
@@ -4443,7 +4544,7 @@ function menuSheet(){
       data.logRIR?'<span class="badge">On</span>':'<span class="chev">'+ic('chevright')+'</span>')}</div>
     <div class="sect-title">Food</div>
     <div class="menulist">${row('myfoods','plate','My foods',(data.foods||[]).length+' saved')}
-      ${row('meals','timer','Meals', mealList().map(m=>m.name).join(' · '))}</div>
+      ${row('meals','timer','Meals', esc(mealList().map(m=>m.name).join(' · ')))}</div>
     <div class="sect-title">Sync &amp; security</div>
     <div class="menulist">
       ${row('syncsetup','cloud','Cloud sync', sync.enabled?('Last synced '+(sync.last?timeAgo(sync.last):'not yet')):'Not set up',
@@ -4671,7 +4772,12 @@ async function supPush(){ if(!sync.userId) return;
    blob nor overwrite it with its own shorter one. */
 let _aheadTold=false;
 function mergeRemote(remote){ if(!remote||typeof remote!=='object') return false;
-  const rv=parseInt(remote.v,10);
+  /* A blob written before versioning existed has no `v` at all. parseInt gives
+     NaN, every comparison against it is false, and it used to fall through to
+     the normal path — merging pre-migration history as though it were current,
+     which un-does the set-completion migration and destroys the personal
+     records and volume of every day that device touched. */
+  let rv=parseInt(remote.v,10); if(!(rv>=1)) rv=1;
   /* The mirror image of the guard below: a build OLDER than this one has no
      idea the newer top-level keys exist, so its settings half would silently
      delete them. Take its days — those are additive and merged per record —
@@ -4708,7 +4814,10 @@ function mergeRemote(remote){ if(!remote||typeof remote!=='object') return false
 }
 let pushTimer=null;
 function schedulePush(){ if(!sync.enabled) return; setSyncDot('sync'); clearTimeout(pushTimer); pushTimer=setTimeout(async()=>{ try{ await supPush(); sync.last=nowMs(); saveSync(); setSyncDot('ok'); }catch(e){ setSyncDot('err'); } }, 1600); }
-async function startupSync(){ if(!(sync.enabled&&sync.token&&sync.userId)) return; setSyncDot('sync'); try{ const remote=await supPull(); if(remote){ mergeRemote(remote); persistLocal(); render(); } await supPush(); sync.last=nowMs(); saveSync(); setSyncDot('ok'); }catch(e){ setSyncDot('err'); } }
+async function startupSync(){ if(!(sync.enabled&&sync.token&&sync.userId)) return; setSyncDot('sync'); try{ const remote=await supPull();
+  if(remote){ if(!mergeRemote(remote)){ setSyncDot('err'); return; } persistLocal(); render(); }
+  await supPush(); if(SCHEMA_AHEAD){ setSyncDot('err'); return; }
+  sync.last=nowMs(); saveSync(); setSyncDot('ok'); }catch(e){ setSyncDot('err'); } }
 function setSyncDot(s){ const el=document.getElementById('syncDot'); if(!el) return; if(!sync.enabled){ el.style.display='none'; return; } el.style.display='block'; el.className='sync-dot '+(s||'ok'); }
 function syncSheet(){
   if(sync.enabled){ openSheet(`<h3 id="sheetTitle">Cloud sync</h3>
@@ -4800,10 +4909,12 @@ document.addEventListener('click', e=>{
   else if(a==='clearfocus'){ data.focus=[]; touchSettings(); save(); render(); }
   else if(a==='finishday'){ const sp=curSplit(); const ni=((+el.dataset.i)+1)%sp.length;
     const s=dstore(); const had=sessionStats();
-    if(had){ s.sess=Object.assign({s:nowMs()}, s.sess, {e:nowMs()});
-      /* A session left open overnight is a forgotten tab, not a six-hour
-         workout — clamp rather than record a number nobody will believe. */
-      if(s.sess.e-s.sess.s > 5*3600000) s.sess.s=s.sess.e-5*3600000;
+    /* Stamp the end once. Pressing Finish again — easy to do, the button stays
+       on screen — used to restamp `e` to now and re-clamp `s` forward, so a
+       35-minute session became "5 hr" and the real start was gone for good. */
+    if(had && !(s.sess && s.sess.e)){
+      const start=(s.sess && s.sess.s) || nowMs();
+      s.sess=Object.assign({}, s.sess, {s:start, e:nowMs()});
       touch(); }
     /* Only a session finished TODAY moves the split forward. Paging back to
        correct last Tuesday and tapping Finish used to advance the live
@@ -4824,7 +4935,12 @@ document.addEventListener('click', e=>{
       inp.classList.remove('autofilled'); void inp.offsetWidth; inp.classList.add('autofilled'); } });
     if(n){ touch(); save(); showToast('Filled '+n+' set'+(n===1?'':'s')+' with '+w+' '+data.unit,'good'); } else showToast('Those sets are already filled'); }
   else if(a==='setdone'){ const ex=dec(el.dataset.ex),i=+el.dataset.i; markSessionStart(); const s=dstore(); const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{}; arr[i].done=!arr[i].done;
+    /* Carry the set TYPE along with the numbers. Copying last session's
+       warm-up weight and reps into a row that stays a working set turns a
+       135lb ramp into completed work — inflating volume and tonnage, and
+       occasionally crowning a personal record from a warm-up. */
     if(arr[i].done&&(!arr[i].w||!arr[i].r)){ const ls=lastSets(ex); if(ls&&ls[i]){ if(!arr[i].w&&ls[i].w) arr[i].w=ls[i].w; if(!arr[i].r&&ls[i].r) arr[i].r=ls[i].r;
+      if(arr[i].t===undefined && ls[i].t) arr[i].t=ls[i].t;
       const row=el.closest('.setrow'); if(row){ const ins=row.querySelectorAll('input'); if(ins[0]&&!ins[0].value) ins[0].value=arr[i].w||''; if(ins[1]&&!ins[1].value) ins[1].value=arr[i].r||''; } } }
     touch(); save();
     el.classList.toggle('on',!!arr[i].done);
@@ -4949,32 +5065,39 @@ document.addEventListener('click', e=>{
   else if(a==='export'){ exportData(); }
   else if(a==='gotolog'){ let g; try{ g=JSON.parse(dec(el.dataset.g)); }catch(err){ return; }
     const m=el.dataset.m;
-    const s=dstore(); const entry={name:g.name,p:g.p,c:g.c,f:g.f,meal:m};
+    const k=curKey();                       /* the day it landed on, captured now */
+    const s=dstore(k); const entry={name:g.name,p:g.p,c:g.c,f:g.f,meal:m};
     if(g.det) entry.det=g.det;
     (s.log=s.log||[]).push(entry);
-    touch(); save(); haptic('done'); render();
+    touch(k); save(); haptic('done'); render();
     offerUndo('Logged '+entry.name+' to '+mealName(m), ()=>{
-      /* Remove that exact object, not the last row — the user may have logged
-         something else in the five seconds the toast was up. */
-      const arr=dstore().log||[]; const at=arr.indexOf(entry);
-      if(at>=0){ arr.splice(at,1); touch(); save(); render(); } });
+      /* Remove that exact object from the day it went into — not the last row,
+         and not whatever day the user has since paged to. */
+      const arr=(data.dates[k]||{}).log||[]; const at=arr.indexOf(entry);
+      if(at>=0){ arr.splice(at,1); touch(k); save(); render(); } });
     checkTargets(); }
   else if(a==='storage'){ storageSheet(); }
   else if(a==='meals'){ mealsSheet(); }
   /* ---- program editor ---- */
-  else if(a==='promptok'){ const fn=_promptFn; _promptFn=null; const v=val('promptv'); if(fn) fn(v); }
+
   else if(a==='pgopen'){ programSheet(); }
   else if(a==='pgback'){ programSheet(); }
   else if(a==='pgeditday'){ dayEditSheet(+el.dataset.d); }
   else if(a==='pgeditslot'){ slotEditSheet(+el.dataset.d,+el.dataset.b,+el.dataset.x); }
   else if(a==='pgdayup'||a==='pgdaydown'){ const i=+el.dataset.d, j=a==='pgdayup'?i-1:i+1;
+    refocusAfter(`[data-act="${a}"][data-d="${j}"]`);
     pgEdit(p=>{ if(j<0||j>=p.days.length) return; const t=p.days[i]; p.days[i]=p.days[j]; p.days[j]=t; });
     programSheet(); render(); }
   else if(a==='pgdaydel'){ const i=+el.dataset.d;
     const p0=activeProgram()||ensureProgramForView(); const d=p0.days[i]; if(!d||p0.days.length<2) return;
     confirmSheet({title:'Delete '+(d.tag||('Day '+(i+1)))+'?',
       body:'The day comes out of the rotation. Nothing you have already logged is touched — your history is keyed by exercise, not by which day it was.',
-      confirmLabel:'Delete day', onYes:()=>{ pgEdit(p=>{ p.days.splice(i,1); if(p.pos>=p.days.length) p.pos=0; });
+      /* Deleting a day BEFORE the pointer shifts every later day down by one,
+         so "up next" would silently become a different workout unless the
+         pointer moves with them. */
+      confirmLabel:'Delete day', onYes:()=>{ pgEdit(p=>{ p.days.splice(i,1);
+          if(p.pos>i) p.pos--;
+          if(p.pos>=p.days.length) p.pos=0; });
         programSheet(); render(); } }); }
   else if(a==='pgdayadd'){ pgEdit(p=>{ p.days.push({id:newId('d'), tag:'New day', name:'New day', priority:0,
       blocks:[{label:null, ex:[]}]}); });
@@ -4995,15 +5118,17 @@ document.addEventListener('click', e=>{
           if(!Object.keys(P.cur).length && !Object.keys(P.mus||{}).length) delete data.program;
           else writeProgram(); }
         touchSettings(); save(); mirrorProgram(); programSheet(); render(); } }); }
-  else if(a==='pgdpri'){ const i=+el.dataset.d;
+  else if(a==='pgdpri'){ const i=+el.dataset.d; refocusAfter('[data-act="pgdpri"]');
     pgEdit(p=>{ p.days[i].priority=p.days[i].priority?0:1; }); dayEditSheet(i); render(); }
-  else if(a==='pgslotpri'){ const i=+el.dataset.d,b=+el.dataset.b,x=+el.dataset.x;
+  else if(a==='pgslotpri'){ const i=+el.dataset.d,b=+el.dataset.b,x=+el.dataset.x; refocusAfter('[data-act="pgslotpri"]');
     pgEdit(p=>{ const e=slotAt(p.days[i],b,x); if(e){ if(e.p) delete e.p; else e.p=1; } });
     slotEditSheet(i,b,x); render(); }
   else if(a==='pgint'){ const i=+el.dataset.d,b=+el.dataset.b,x=+el.dataset.x,v=el.dataset.v;
+    refocusAfter(`[data-act="pgint"][data-v="${v}"]`);
     pgEdit(p=>{ const e=slotAt(p.days[i],b,x); if(e){ if(v) e.int=v; else delete e.int; } });
     slotEditSheet(i,b,x); render(); }
   else if(a==='pgexup'||a==='pgexdown'){ const i=+el.dataset.d,b=+el.dataset.b,x=+el.dataset.x;
+    refocusAfter(`[data-act="${a}"][data-d="${i}"][data-b="${b}"][data-x="${a==='pgexup'?Math.max(0,x-1):x+1}"]`);
     pgEdit(p=>{ const d=p.days[i], blks=d.blocks;
       const ex=blks[b].ex;
       if(a==='pgexup'){
@@ -5016,6 +5141,7 @@ document.addEventListener('click', e=>{
     });
     dayEditSheet(i); render(); }
   else if(a==='pgexdel'){ const i=+el.dataset.d,b=+el.dataset.b,x=+el.dataset.x;
+    refocusAfter('[data-act="pgexadd"]');
     pgEdit(p=>{ const blk=p.days[i].blocks[b]; if(blk) blk.ex.splice(x,1); });
     dayEditSheet(i); render(); }
   else if(a==='pgexadd'){ const i=+el.dataset.d, b=+el.dataset.b;
@@ -5032,9 +5158,14 @@ document.addEventListener('click', e=>{
     pgEdit(p=>{ (p.days[i].blocks=p.days[i].blocks||[]).push({label:'Finisher', ex:[]}); });
     dayEditSheet(i); render(); }
   else if(a==='pgblocklabel'){ const i=+el.dataset.d,b=+el.dataset.b;
-    const cur=(activeProgram().days[i].blocks[b].label)||'';
-    promptSheet('Block name', 'Group a few movements under a heading — "Calves", "Core finisher".', cur, v=>{
-      pgEdit(p=>{ p.days[i].blocks[b].label=normName(v)||null; }); dayEditSheet(i); render(); }); }
+    /* Not activeProgram() — the document does not exist yet while the built-in
+       split is running, and this handler is reachable from it. */
+    const p0=activeProgram()||ensureProgramForView();
+    const blk=((p0.days[i]||{}).blocks||[])[b]; if(!blk) return;
+    promptSheet({title:'Block name',
+      body:'Group a few movements under a heading — "Calves", "Core finisher". Leave it empty for no heading.',
+      value:blk.label||'', confirmLabel:'Save',
+      onYes:v=>{ pgEdit(p=>{ p.days[i].blocks[b].label=normName(v)||null; }); dayEditSheet(i); render(); }}); }
   else if(a==='meassites'){ measSitesSheet(); }
   else if(a==='sessrecap'){ sessionSheet(el.dataset.k); }
   else if(a==='toggsite'){ const id=el.dataset.m;
@@ -5069,7 +5200,7 @@ document.addEventListener('click', e=>{
     confirmSheet({title:'Undo the last upgrade?', body:'This replaces everything currently in the app with the backup taken automatically on '+new Date(snap.at).toLocaleString()+', just before the last version upgrade. Anything logged since then is lost.',
       confirmLabel:'Restore that backup', onYes:()=>{
         try{ const blob=JSON.parse(snap.blob); if(!blob||!blob.dates) throw 0;
-          localStorage.setItem(KEY, snap.blob); localStorage.removeItem(PREV_KEY);
+          localStorage.setItem(KEY, snap.blob); localStorage.removeItem(PREV_KEY); _snapChars=null;
           location.reload();
         }catch(e){ showToast('That backup could not be read','err'); } } }); }
   else if(a==='import'){ document.getElementById('importInput').click(); }
@@ -5096,7 +5227,15 @@ document.addEventListener('click', e=>{
   else if(a==='syncsignup'){ const f=supReadForm(); if(!f.url||!f.key||!f.email||!f.pass){ supMsg('Fill in all fields.',true); return; } sync.url=f.url; sync.anonKey=f.key; supMsg('Creating account…');
     (async()=>{ try{ const r=await supSignUp(f.email,f.pass); if(!r.session){ supMsg('Account created — check your email to confirm, then Sign in.'); return; } await supFinishConnect(); showToast('Account created and synced','good'); }
       catch(e){ sync.enabled=false; sync.token=''; saveSync(); supMsg(typeof e==='string'?e:'Could not create account — check the URL and key.',true); setSyncDot('err'); } })(); }
-  else if(a==='syncnow'){ closeSheet(); setSyncDot('sync'); (async()=>{ try{ const remote=await supPull(); if(remote){ mergeRemote(remote); persistLocal(); render(); } await supPush(); sync.last=nowMs(); saveSync(); setSyncDot('ok'); showToast('Synced','good'); }catch(e){ setSyncDot('err'); showToast('Sync failed — try again','err'); } })(); }
+  else if(a==='syncnow'){ closeSheet(); setSyncDot('sync'); (async()=>{ try{ const remote=await supPull();
+    /* A refused merge is not a successful sync. Reporting "Synced" with a green
+       dot after declining a newer schema told the user their data was safely
+       shared when nothing had moved in either direction. */
+    if(remote && !mergeRemote(remote)){ setSyncDot('err'); showToast('Sync paused — another device is running a newer version of Physiq','err'); return; }
+    if(remote){ persistLocal(); render(); }
+    await supPush();
+    if(SCHEMA_AHEAD){ setSyncDot('err'); showToast('Sync paused — update this device to continue','err'); return; }
+    sync.last=nowMs(); saveSync(); setSyncDot('ok'); showToast('Synced','good'); }catch(e){ setSyncDot('err'); showToast('Sync failed — try again','err'); } })(); }
   else if(a==='syncoff'){ confirmSheet({title:'Disconnect cloud sync?', body:'You will be signed out on this device. Your log stays here, and nothing is deleted from the server.',
       confirmLabel:'Sign out', onYes:()=>{ sync=syncDefault(); saveSync(); setSyncDot(); closeSheet(); showToast('Cloud sync disconnected'); } }); }
 });
@@ -5239,7 +5378,15 @@ document.getElementById('photoInput').addEventListener('change', function(){
 });
 document.getElementById('importInput').addEventListener('change', function(){
   const f=this.files&&this.files[0]; if(!f) return; const rd=new FileReader();
-  rd.onload=()=>{ try{ const obj=JSON.parse(rd.result); if(obj&&obj.dates){ data=obj; data.unit=data.unit||'lb'; ensureDefaults(); touchSettings(); save(); closeSheet(); render(); showToast('Backup imported','good'); }
+  rd.onload=()=>{ try{ const obj=JSON.parse(rd.result);
+    if(obj && obj.dates && typeof obj.dates==='object'){
+      if(parseInt(obj.v,10)>SCHEMA_V){ showToast('That backup was made by a newer version of Physiq — update this one first','err'); return; }
+      data=obj; data.unit=data.unit||'lb';
+      /* A backup is a blob like any other and may predate the current schema.
+         Without this the imported history reads as empty — no records, no
+         volume — until the app happens to be reloaded. */
+      runMigrations(); ensureDefaults(); reconcileProgram();
+      touchSettings(); save(); closeSheet(); render(); showToast('Backup imported','good'); }
     else showToast('That does not look like a Physiq backup','err'); }catch(e){ showToast('Could not read that file','err'); } };
   rd.readAsText(f); this.value='';
 });
@@ -5285,7 +5432,7 @@ document.getElementById('lockLink').addEventListener('click', ()=>{
       confirmLabel:'Erase and set a new PIN', onYes:()=>{ data={v:SCHEMA_V,unit:data.unit||'lb',restDefault:data.restDefault||120,dates:{}}; ensureDefaults(); save();
         buf=''; firstPin=''; lockMode='create'; closeSheet(); renderLock(); } }); }
 });
-applyViewMode(); runMigrations(); ensureDefaults(); reconcileProgram(); auditSchema(); applyPhase(); state.liftDay=getRot(); render();
+applyViewMode(); runMigrations(); expireSnapshot(); ensureDefaults(); reconcileProgram(); auditSchema(); applyPhase(); state.liftDay=getRot(); render();
 if(data.onboarded) initLock(); else startOnboarding(); if(sync.enabled) setSyncDot('ok'); startupSync();
 window.addEventListener('resize', ()=>{ if((data.viewMode||'auto')==='auto') applyViewMode(); });
 /* Offline shell. Only meaningful when served over http(s); opening the file
