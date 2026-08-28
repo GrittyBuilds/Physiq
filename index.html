@@ -2960,17 +2960,37 @@ let LIVE=null;
    of rendering the Lift tab, so relying on it alone would make the safety
    property depend on render ordering. Both must hold. */
 function plannableDate(k){ return k===todayKey() || state.planned===k; }
+/* Has anything actually been performed under the identity this record claims? */
+function sessionHasWork(s){
+  const sets=s.sets||{};
+  return ((s.sn&&s.sn.ex)||[]).some(n=>(sets[n]||[]).some(countsAsWork));
+}
 function ensureSession(k){
   if(!LIVE || LIVE.k!==k) return;          /* THE guard. Do not weaken it. */
   if(!plannableDate(k)){ LIVE=null; return; }
   const s=dstore(k);
-  const ex=LIVE.ex.slice();
-  /* Anything logged on this date that the plan does not contain is part of the
-     session too — a swap, an addition, or a set that arrived from another
-     device. */
-  Object.keys(s.sets||{}).forEach(n=>{ if(ex.indexOf(n)<0) ex.push(n); });
-  if(!s.sn) s.sn={p:LIVE.p, d:LIVE.d, tag:LIVE.tag, dn:LIVE.dn, ex};
-  else Object.assign(s.sn, {p:LIVE.p, d:LIVE.d, tag:LIVE.tag, dn:LIVE.dn, ex});
+  const sets=s.sets||{};
+  if(!s.sn){
+    const ex=LIVE.ex.slice();
+    Object.keys(sets).forEach(n=>{ if(ex.indexOf(n)<0) ex.push(n); });
+    s.sn={p:LIVE.p, d:LIVE.d, tag:LIVE.tag, dn:LIVE.dn, ex};
+    return;
+  }
+  /* IDENTITY IS WRITTEN ONCE. Rewriting it on every keystroke meant that
+     finishing a Push session — which advances the rotation — and then touching
+     any set again rebranded the finished session as Pull; and that picking a
+     day to back-fill a missed workout leaked that choice onto today's already
+     recorded session. It may only be re-stated while nothing has actually been
+     performed under it, which is the mis-tapped-the-wrong-day case. */
+  if(!s.sn.fin && !sessionHasWork(s)){
+    s.sn.p=LIVE.p; s.sn.d=LIVE.d; s.sn.tag=LIVE.tag; s.sn.dn=LIVE.dn;
+    s.sn.ex=LIVE.ex.slice();
+  }
+  /* Membership only ever grows: a movement added, swapped in, or arriving from
+     another device belongs to the session either way. */
+  const ex=s.sn.ex||(s.sn.ex=[]);
+  if(!s.sn.fin) LIVE.ex.forEach(n=>{ if(ex.indexOf(n)<0) ex.push(n); });
+  Object.keys(sets).forEach(n=>{ if(ex.indexOf(n)<0) ex.push(n); });
 }
 /* Every writer on the Lift tab goes through this. */
 function liftWrite(k){ k=k||curKey(); markSessionStart(k); ensureSession(k); }
@@ -3002,10 +3022,16 @@ function liftPlan(k){
   if(!planning && s.sn && Array.isArray(s.sn.ex) && s.sn.ex.length){
     /* Reading, not planning: drop any stale pointer before rendering. */
     const day=findProgramDay(s.sn.p, s.sn.d);
+    /* A recorded session is scored by what it recorded, never by the program as
+       it stands today: taking the row count from the current slot meant editing
+       a program retroactively rewrote a finished session's completion and
+       inserted blank rows into it. The prescription is still shown where it
+       still matches, but only as context — `ps`/`pr`, never `s`/`r`. */
     const specs=s.sn.ex.map((n,idx)=>{
       const slot=day? slotByName(day,n) : null;
-      return {n, s:slot?slot.s:1, r:slot?slot.r:'', rir:slot&&slot.rir, int:slot&&slot.int,
-              p:slot&&slot.p, orig:(s.sn.sw&&s.sn.sw[idx])||null, floor:slot?slot.s:1};
+      return {n, s:1, r:'', floor:1,
+              ps:slot?slot.s:null, pr:slot?slot.r:null, prir:slot?slot.rir:null,
+              int:slot&&slot.int, p:slot&&slot.p, orig:(s.sn.sw&&s.sn.sw[idx])||null};
     });
     keys.forEach(n=>{ if(s.sn.ex.indexOf(n)<0) specs.push({n, s:1, r:'', floor:1, extra:true}); });
     LIVE=null;
@@ -3027,9 +3053,11 @@ function liftPlan(k){
     });
     const planned=specs.filter(x=>x.n).map(x=>x.n);
     /* A set that exists on this date but is not in the plan — from a swap the
-       program no longer has, an older build, or a merge — is shown rather than
-       left invisible. */
-    keys.forEach(n=>{ if(planned.indexOf(n)<0) specs.push({n, s:1, r:'', floor:1, extra:true}); });
+       program no longer has, an added movement, an older build, or a merge — is
+       shown rather than left invisible. EVERY key, not only the filled ones: an
+       exercise just added by hand is empty by definition, and dropping it made
+       the Add button do nothing at all. */
+    Object.keys(s.sets||{}).forEach(n=>{ if(planned.indexOf(n)<0) specs.push({n, s:1, r:'', floor:1, extra:true}); });
     LIVE={k, p:currentProgramId(), d:d.id||('d'+(state.liftDay+1)), tag:d.tag, dn:d.name,
           ex:specs.filter(x=>x.n).map(x=>x.n)};
     return {mode:'plan', specs, day:d, sp, rp};
@@ -3144,11 +3172,18 @@ function viewLift(){
         ? `<button class="sugg ${sg.up?'up':''}" data-act="usesuggest" data-ex="${enc(name)}" data-w="${sg.w}">
              ${ic(sg.up?'arrowup':'repeat')}<span>${sg.up?'Progress to':'Repeat'} <b>${sg.w} ${data.unit}</b>${sg.up?` · start at ${sg.lo}`:' · beat last'}</span><span class="use">Use</span></button>`
         : (last?`<div class="last">${last}</div>`:'');
-      /* A recorded or derived session has no prescription to show — printing
-         "1 × " there would be inventing one. */
-      const tg = ex.r
-        ? `${ex.s} × ${esc(ex.r)}${ex.rir?` · ${esc(ex.rir)} RIR`:''}`
-        : `${saved.filter(st=>st&&(st.w||st.r)).length||rowN} ${(saved.filter(st=>st&&(st.w||st.r)).length||rowN)===1?'set':'sets'} logged`;
+      /* A recorded or derived session has no prescription of its own to show —
+         printing "1 × " there would be inventing one. What it CAN show is how
+         much was logged, and, where the program still has that movement, what
+         had been asked for. Zero is reported as zero: the old `|| rowN`
+         fallback claimed "1 set logged" for a row holding nothing. */
+      let tg;
+      if(ex.r){ tg=`${ex.s} × ${esc(ex.r)}${ex.rir?` · ${esc(ex.rir)} RIR`:''}`; }
+      else {
+        const nLogged=saved.filter(st=>st&&(st.w||st.r)).length;
+        tg = nLogged ? `${nLogged} ${nLogged===1?'set':'sets'} logged` : 'nothing logged';
+        if(ex.ps && ex.pr) tg+=` · asked for ${ex.ps} × ${esc(ex.pr)}${ex.prir?` · ${esc(ex.prir)} RIR`:''}`;
+      }
       out+=`<div class="ex ${ex.p?'pri':''} ${allDone?'complete':''}">
         <div class="ex-h"><div class="grow">
           <button class="nm" data-act="exhist" data-ex="${enc(name)}" aria-label="History for ${esc(name)}">${esc(name)}${ex.foc?' <span class="foc-badge">focus</span>':''}${ex.int?` <span class="int-badge" title="on the final set">+${esc(ex.int)}</span>`:''}${ex.extra?' <span class="foc-badge">added</span>':''}</button>
@@ -3195,9 +3230,35 @@ function swapSheet(orig){
 function moveSets(s, from, to){ if(from===to) return; if(s.sets&&s.sets[from]&&!s.sets[to]){ s.sets[to]=s.sets[from]; delete s.sets[from]; } }
 function setSwap(orig,newName){ const s=dstore(); s.swaps=s.swaps||{};
   const prevKey=s.swaps[orig]||orig; const clean=(newName||'').trim();
-  if(!clean||clean.toLowerCase()===orig.toLowerCase()){ delete s.swaps[orig]; moveSets(s, prevKey, orig); }
-  else { s.swaps[orig]=clean; moveSets(s, prevKey, clean); }
+  let key;
+  if(!clean||clean.toLowerCase()===orig.toLowerCase()){ delete s.swaps[orig]; moveSets(s, prevKey, orig); key=orig; }
+  else { s.swaps[orig]=clean; moveSets(s, prevKey, clean); key=clean; }
+  /* liftWrite FIRST — it creates the record if this is the first thing done
+     today — and the rename after it, because ensureSession syncs membership
+     from the LAST render's plan, which still names the movement being replaced
+     and would push it straight back in. */
+  liftWrite();
+  snReplace(dstore(), prevKey, key, key!==orig ? orig : null);
   touch(); save(); closeSheet(); render();
+}
+/* Rewrite one name in the session record in place, carrying the "swapped from"
+   note with it and collapsing any duplicate the sync-up left behind. Rebuilt
+   rather than spliced because `sw` is keyed by position. */
+function snReplace(s, from, to, origName){
+  if(!s.sn || !Array.isArray(s.sn.ex)) return;
+  const oldEx=s.sn.ex, oldSw=s.sn.sw||{};
+  const ex=[], sw={}, seen=Object.create(null);
+  oldEx.forEach((n,i)=>{
+    const nm=(n===from)? to : n;
+    if(seen[nm]) return;
+    seen[nm]=1;
+    const at=ex.length; ex.push(nm);
+    const prov=(n===from)? origName : oldSw[i];
+    if(prov && prov!==nm) sw[at]=prov;
+  });
+  if(!seen[to]){ const at=ex.length; ex.push(to); if(origName && origName!==to) sw[at]=origName; }
+  s.sn.ex=ex;
+  if(Object.keys(sw).length) s.sn.sw=sw; else delete s.sn.sw;
 }
 /* Meals for the food log. defaultMeal picks by time of day when adding. */
 /* MEALS ARE USER DATA. The default set keeps every id the app has ever
@@ -5164,7 +5225,10 @@ document.addEventListener('click', e=>{
       const start=(s.sess && s.sess.s) || nowMs();
       s.sess=Object.assign({}, s.sess, {s:start, e:nowMs()});
       touch(); }
-    if(s.sn) s.sn.fin=1;
+    /* Outside the block above, which only runs when there was something to
+       stamp a duration on — so this needs its own touch() or the finished flag
+       never replicates and is dropped by the next merge. */
+    if(s.sn && !s.sn.fin){ s.sn.fin=1; touch(); }
     /* Only a session finished TODAY moves the split forward. Paging back to
        correct last Tuesday and tapping Finish used to advance the live
        rotation, silently skipping whatever was actually next. */
