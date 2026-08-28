@@ -42,6 +42,32 @@ anything you type. Within a day a name identifies one movement, so entering a
 name that is already there gets a `(2)` rather than quietly merging two
 exercises' histories.
 
+## What a past date shows
+
+Page back to last Tuesday and you see Tuesday: the movements you actually
+performed, in the order you did them, with the day's name as it was at the
+time. Not today's prescription with Tuesday's numbers poured into it, and not
+a screen that silently hides anything you did which today's program happens
+not to contain.
+
+A date carries its own record of the session — which program, which day, the
+ordered list of movements — written only while the app is genuinely rendering
+a plan for that exact date. That guard is the whole design: typing on an old
+log can never brand it with today's program.
+
+Four things a date can be, and it tells you which:
+
+- **Today, or a date you chose to log against** — the full plan, day chips,
+  weight suggestions and rest timer.
+- **A recorded session** — what you did, with the prescription resolved from
+  the program where it still matches, and honest silence where it does not.
+- **A session logged before any of this existed** — derived from the sets
+  themselves, still fully editable.
+- **A day with nothing on it** — which offers to log a workout against it.
+
+Every one of them is writable, and any of them can gain an exercise the
+program does not contain.
+
 ## Targets that come from your own data
 
 Physiq records what you ate and what you weighed, every day. That is the pair of
@@ -142,6 +168,13 @@ carrying its macros and serving note over exactly:
 Every copy comes with an Undo. Foods you have not saved yet can be searched by
 name against Open Food Facts, but your own saved list always comes first — the
 long tail is for the exception, not the daily loop.
+
+When a lookup does not produce a food, the app says which of the several
+possible reasons it was: no matches, results with no nutrition data, offline,
+no answer, an error from the database, a response it could not read, or a
+request that never left the device. The last of those names the likely cause,
+because the browser will not — a blocked host, a DNS failure and a CORS
+rejection all arrive as one indistinguishable error.
 
 ## Your data
 

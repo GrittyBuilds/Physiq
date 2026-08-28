@@ -2427,7 +2427,7 @@ function persistLocal(){ try{ const s=JSON.stringify(data); localStorage.setItem
 function touch(k){ k=k||curKey(); const s=dstore(k); s._u=nowMs(); }
 function touchSettings(){ data.updatedAt=nowMs(); }
 /* ---------------- STATE ---------------- */
-const state = { tab:'today', liftDay: 0, statsView:'week', day: todayKey(), fuelEnergy:'remaining', fuelMeal:null, sheetMeal:null, foodQuery:'', foodCtx:'log' };
+const state = { tab:'today', liftDay: 0, statsView:'week', day: todayKey(), fuelEnergy:'remaining', fuelMeal:null, sheetMeal:null, planned:null, foodQuery:'', foodCtx:'log' };
 /* Currently-viewed day (defaults to today). Day-scoped views/edits operate on this. */
 function curKey(){ return state.day||todayKey(); }
 function isToday(){ return curKey()===todayKey(); }
@@ -2944,46 +2944,169 @@ function suggestWeight(ex, ls){
   if(maxed) return {w:fmtWt(lw+inc), lo:rr.lo, hi:rr.hi, up:true};
   return {w:fmtWt(lw), lo:rr.lo, hi:rr.hi, up:false};
 }
+/* ===================== WHAT A PAST DATE RENDERS =====================
+   The Lift tab used to draw today's prescription over whatever date you were
+   looking at: page back to last Tuesday and you saw today's exercises with
+   Tuesday's numbers inside them, and anything you had actually done that day
+   which is not in today's program simply did not appear.
+
+   A date now carries its own record of what was performed — `sn` — written
+   only while the app is actually rendering a plan for that exact date. LIVE is
+   that guard: modes 'log' and 'none' never set it, so a keystroke on an old
+   date can never stamp today's program onto it. */
+let LIVE=null;
+function ensureSession(k){
+  if(!LIVE || LIVE.k!==k) return;          /* THE guard. Do not weaken it. */
+  const s=dstore(k);
+  const ex=LIVE.ex.slice();
+  /* Anything logged on this date that the plan does not contain is part of the
+     session too — a swap, an addition, or a set that arrived from another
+     device. */
+  Object.keys(s.sets||{}).forEach(n=>{ if(ex.indexOf(n)<0) ex.push(n); });
+  if(!s.sn) s.sn={p:LIVE.p, d:LIVE.d, tag:LIVE.tag, dn:LIVE.dn, ex};
+  else Object.assign(s.sn, {p:LIVE.p, d:LIVE.d, tag:LIVE.tag, dn:LIVE.dn, ex});
+}
+/* Every writer on the Lift tab goes through this. */
+function liftWrite(k){ k=k||curKey(); markSessionStart(k); ensureSession(k); }
+
+function currentProgramId(){ const p=activeProgram(); return p? p.id : '@'+activePhase().id; }
+function findProgramDay(pid, did){
+  const P=data.program;
+  let days=null;
+  if(P && P.progs && P.progs[pid]) days=P.progs[pid].days;
+  else if(typeof pid==='string' && pid.charAt(0)==='@') days=presetDays(pid.slice(1));
+  if(!Array.isArray(days)) return null;
+  return days.find(d=>d && d.id===did) || null;
+}
+function slotByName(day, name){
+  let hit=null;
+  ((day&&day.blocks)||[]).forEach(b=>(b.ex||[]).forEach(e=>{ if(!hit && e && e.n===name) hit=e; }));
+  return hit;
+}
+function loggedKeys(s){
+  const sets=s.sets||{};
+  return Object.keys(sets).filter(n=>(sets[n]||[]).some(st=>st&&(st.w||st.r||st.done)));
+}
+/* One of four modes, in this order. Only 'plan' sets LIVE. */
+function liftPlan(k){
+  const s=data.dates[k]||{};
+  const planning = (k===todayKey()) || (state.planned===k);
+  const keys=loggedKeys(s);
+
+  if(!planning && s.sn && Array.isArray(s.sn.ex) && s.sn.ex.length){
+    const day=findProgramDay(s.sn.p, s.sn.d);
+    const specs=s.sn.ex.map((n,idx)=>{
+      const slot=day? slotByName(day,n) : null;
+      return {n, s:slot?slot.s:1, r:slot?slot.r:'', rir:slot&&slot.rir, int:slot&&slot.int,
+              p:slot&&slot.p, orig:(s.sn.sw&&s.sn.sw[idx])||null, floor:slot?slot.s:1};
+    });
+    keys.forEach(n=>{ if(s.sn.ex.indexOf(n)<0) specs.push({n, s:1, r:'', floor:1, extra:true}); });
+    LIVE=null;
+    return {mode:'rec', specs, tag:s.sn.tag, name:s.sn.dn||s.sn.tag||'Logged session', fin:s.sn.fin,
+            stale:!day};
+  }
+
+  if(planning){
+    const sp=curSplit(), rp=getRot();
+    if(state.liftDay>=sp.length||state.liftDay<0) state.liftDay=rp;
+    const d=sp[state.liftDay];
+    const specs=[];
+    (d.blocks||[]).forEach(b=>{
+      if(b.label) specs.push({block:b.label});
+      (b.ex||[]).forEach(e0=>{
+        const swapName=(s.swaps&&s.swaps[e0.n])||'';
+        specs.push(Object.assign({}, e0, {n:swapName||e0.n, orig:swapName?e0.n:null, floor:e0.s}));
+      });
+    });
+    const planned=specs.filter(x=>x.n).map(x=>x.n);
+    /* A set that exists on this date but is not in the plan — from a swap the
+       program no longer has, an older build, or a merge — is shown rather than
+       left invisible. */
+    keys.forEach(n=>{ if(planned.indexOf(n)<0) specs.push({n, s:1, r:'', floor:1, extra:true}); });
+    LIVE={k, p:currentProgramId(), d:d.id||('d'+(state.liftDay+1)), tag:d.tag, dn:d.name,
+          ex:specs.filter(x=>x.n).map(x=>x.n)};
+    return {mode:'plan', specs, day:d, sp, rp};
+  }
+
+  LIVE=null;
+  /* Every key, not only the filled ones: on a derived session an exercise the
+     user just added is empty by definition, and dropping it would make the
+     Add button look broken. */
+  const allKeys=Object.keys(s.sets||{});
+  if(allKeys.length){
+    const specs=allKeys.map(n=>{
+      let orig=null;
+      /* No plan exercise to look forward from here, so the swap map is read in
+         reverse to recover the provenance note. */
+      if(s.swaps) Object.keys(s.swaps).forEach(o=>{ if(s.swaps[o]===n) orig=o; });
+      return {n, s:1, r:'', floor:1, orig};
+    });
+    return {mode:'log', specs};
+  }
+  return {mode:'none'};
+}
+
 function viewLift(){
-  const sp=curSplit(); const rp=getRot();
-  if(state.liftDay>=sp.length||state.liftDay<0) state.liftDay=rp;
-  const chips=sp.map((d,i)=>`<button class="chip ${i===state.liftDay?'on':''}" data-act="pickday" data-i="${i}"
-    aria-pressed="${i===state.liftDay}">Day ${i+1} · ${d.tag}${i===rp?' <span class="live" aria-hidden="true"></span>':''}</button>`).join('');
-  const d=sp[state.liftDay]; const s=dstore();
-  const exList=d.blocks.reduce((a,b)=>a.concat(b.ex),[]);
-  // How far through the session are we — the thing the old screen never told you.
+  const k=curKey();
+  const plan=liftPlan(k);
+  const s=dstore(k);
+
+  if(plan.mode==='none'){
+    const sp=curSplit(), rp=getRot();
+    return `<div class="card span2"><h2>${esc(longDayLabel(k))}</h2>
+      <div class="empty">${ic('dumbbell')}Nothing was logged on this day.</div>
+      <button class="btn ghost" data-act="planday" data-k="${k}">${ic('plus')} Log a workout for this date</button>
+      <div class="hint tail">You will pick a day from your program, and it will be recorded against this date.</div></div>`;
+  }
+
   /* Counts working sets only, and counts rows actually on screen — a set you
      added mid-workout is part of the session, a warm-up is not. */
   let planned=0, done=0;
-  exList.forEach(e0=>{ const nm=(s.swaps&&s.swaps[e0.n])||e0.n;
-    const arr=((s.sets||{})[nm]||[]);
-    const rowN=Math.max(e0.s, arr.length);
+  plan.specs.forEach(sp0=>{ if(!sp0.n) return;
+    const arr=((s.sets||{})[sp0.n]||[]);
+    const rowN=Math.max(sp0.s||1, arr.length);
     for(let i=0;i<rowN;i++){ if(!isWarmup(arr[i])) planned++; }
     done+=arr.filter(countsAsWork).length; });
   done=Math.min(done,planned);
 
-  let out=`<div class="chips">${chips}</div>`;
-  out+=`<div class="setprog"><div class="row"><span class="nm">Day ${state.liftDay+1} · ${esc(d.name)}${d.priority?' · priority':''}${state.liftDay===rp?' · up next':''}</span>
-      <span class="ct"><b>${done}</b>/${planned} sets</span></div>
-    <div class="bar"><i data-fill="${pctOf(done,planned)}%" style="width:${pctOf(done,planned)}%;background:var(--good)"></i></div></div>`;
+  let out='';
+  if(plan.mode==='plan'){
+    const {sp, rp, day}=plan;
+    out+=`<div class="chips">`+sp.map((d,i)=>`<button class="chip ${i===state.liftDay?'on':''}" data-act="pickday" data-i="${i}"
+      aria-pressed="${i===state.liftDay}">Day ${i+1} · ${esc(d.tag)}${i===rp?' <span class="live" aria-hidden="true"></span>':''}</button>`).join('')+`</div>`;
+    out+=`<div class="setprog"><div class="row"><span class="nm">Day ${state.liftDay+1} · ${esc(day.name)}${day.priority?' · priority':''}${state.liftDay===rp?' · up next':''}</span>
+        <span class="ct"><b>${done}</b>/${planned} sets</span></div>
+      <div class="bar"><i data-fill="${pctOf(done,planned)}%" style="width:${pctOf(done,planned)}%;background:var(--good)"></i></div></div>`;
+    if(!isToday()) out+=`<div class="banner">${ic('calendar')}<div>Logging against <b>${esc(longDayLabel(k))}</b>, not today.</div></div>`;
+  } else {
+    const label = plan.mode==='rec' ? esc(plan.name) : 'Logged session';
+    out+=`<div class="setprog"><div class="row"><span class="nm">${label}${plan.fin?' · finished':''}</span>
+        <span class="ct"><b>${done}</b>/${planned} sets</span></div>
+      <div class="bar"><i data-fill="${pctOf(done,planned)}%" style="width:${pctOf(done,planned)}%;background:var(--good)"></i></div></div>`;
+    out+=`<div class="banner">${ic('calendar')}<div>${plan.mode==='rec'
+      ? `What you actually did on <b>${esc(longDayLabel(k))}</b>${plan.stale?' — the program day it came from has since been changed or deleted, so only the movements are shown':''}.`
+      : `Logged on <b>${esc(longDayLabel(k))}</b>, before Physiq recorded which program day a session came from.`}
+      · <span class="lnk" role="button" tabindex="0" data-act="planday" data-k="${k}">log a program day instead</span></div></div>`;
+  }
+
   const rd=data.restDefault||120; const RO=[[60,'60s'],[90,'90s'],[120,'2m'],[180,'3m']];
-  out+=`<div class="restsel"><span>${ic('timer')}Rest</span><div class="seg sm" role="group" aria-label="Rest timer length">${
+  if(plan.mode==='plan') out+=`<div class="restsel"><span>${ic('timer')}Rest</span><div class="seg sm" role="group" aria-label="Rest timer length">${
     RO.map(o=>`<button class="${o[0]===rd?'on':''}" data-act="setrest" data-s="${o[0]}" aria-pressed="${o[0]===rd}">${o[1]}</button>`).join('')}</div></div>`;
   out+=`<div class="lift-legend"><b>RIR</b> = reps left in reserve · tap a <b>set number</b> to mark it a warm-up or a drop/myo/rest-pause set · <span class="pdot">●</span> priority bring-up</div>`;
-  d.blocks.forEach(block=>{
-    if(block.label) out+=`<div class="sect-title">${esc(block.label)}</div>`;
-    block.ex.forEach(ex0=>{
-      const orig=ex0.n;
-      const swapName=(s.swaps&&s.swaps[orig])||'';
-      const ex = swapName? Object.assign({},ex0,{n:swapName}) : ex0;
+
+  plan.specs.forEach((ex, si)=>{
+    if(ex.block){ out+=`<div class="sect-title">${esc(ex.block)}</div>`; return; }
+    {
+      const orig=ex.orig;
+      const swapName=orig?ex.n:'';
       const name=ex.n;
       const saved=(s.sets&&s.sets[name])||[];
       const ls=lastSets(name);
       const last=lastLine(ls);
-      const sg=suggestWeight(ex, ls);
+      const sg=(plan.mode==='plan')? suggestWeight(ex, ls) : null;
       /* The prescription is a floor, not a cage: extra sets logged today render
          alongside the planned ones. */
-      const rowN=Math.max(ex.s, saved.length);
+      const rowN=Math.max(ex.s||1, saved.length);
       const allDone=rowN>0 && Array.from({length:rowN},(_,i)=>saved[i]).every(st=>st&&st.done);
       const useRir=!!data.logRIR;
       let rows='', workNo=0;
@@ -3003,27 +3126,49 @@ function viewLift(){
           <button class="chk ${st.done?'on':''}" data-act="setdone" data-ex="${enc(name)}" data-i="${i}"
             role="checkbox" aria-checked="${st.done?'true':'false'}" aria-label="${lbl} complete">${ic('check')}</button></div>`;
       }
+      const floor=ex.floor||1;
       rows+=`<div class="setadd">
         <button class="mini" data-act="addset" data-ex="${enc(name)}" data-n="${rowN}">+ Set</button>
-        ${rowN>ex.s?`<button class="mini" data-act="delset" data-ex="${enc(name)}" data-n="${rowN}" data-min="${ex.s}">− Set</button>`:''}
+        ${rowN>floor?`<button class="mini" data-act="delset" data-ex="${enc(name)}" data-n="${rowN}" data-min="${floor}">− Set</button>`:''}
       </div>`;
-      const swapNote = swapName? `<div class="swapnote">swapped from ${esc(orig)} · <span class="lnk" role="button" tabindex="0" data-act="revertswap" data-orig="${enc(orig)}">revert</span></div>` : '';
+      const swapNote = swapName
+        ? `<div class="swapnote">swapped from ${esc(orig)}${plan.mode==='plan'?` · <span class="lnk" role="button" tabindex="0" data-act="revertswap" data-orig="${enc(orig)}">revert</span>`:''}</div>` : '';
       const suggestion = sg
         ? `<button class="sugg ${sg.up?'up':''}" data-act="usesuggest" data-ex="${enc(name)}" data-w="${sg.w}">
              ${ic(sg.up?'arrowup':'repeat')}<span>${sg.up?'Progress to':'Repeat'} <b>${sg.w} ${data.unit}</b>${sg.up?` · start at ${sg.lo}`:' · beat last'}</span><span class="use">Use</span></button>`
         : (last?`<div class="last">${last}</div>`:'');
+      /* A recorded or derived session has no prescription to show — printing
+         "1 × " there would be inventing one. */
+      const tg = ex.r
+        ? `${ex.s} × ${esc(ex.r)}${ex.rir?` · ${esc(ex.rir)} RIR`:''}`
+        : `${saved.filter(st=>st&&(st.w||st.r)).length||rowN} ${(saved.filter(st=>st&&(st.w||st.r)).length||rowN)===1?'set':'sets'} logged`;
       out+=`<div class="ex ${ex.p?'pri':''} ${allDone?'complete':''}">
         <div class="ex-h"><div class="grow">
-          <button class="nm" data-act="exhist" data-ex="${enc(name)}" aria-label="History for ${esc(name)}">${esc(name)}${ex.foc?' <span class="foc-badge">focus</span>':''}${ex.int?` <span class="int-badge" title="on the final set">+${ex.int}</span>`:''}</button>
-          <div class="tg">${ex.s} × ${ex.r}${ex.rir?` · ${ex.rir} RIR`:''}</div>${swapNote}${suggestion}</div>
+          <button class="nm" data-act="exhist" data-ex="${enc(name)}" aria-label="History for ${esc(name)}">${esc(name)}${ex.foc?' <span class="foc-badge">focus</span>':''}${ex.int?` <span class="int-badge" title="on the final set">+${esc(ex.int)}</span>`:''}${ex.extra?' <span class="foc-badge">added</span>':''}</button>
+          <div class="tg">${tg}</div>${swapNote}${suggestion}</div>
         <div class="ex-r">${ex.p?'<span class="pill">Priority</span>':''}
-          <button class="rowbtn" data-act="swapex" data-ex="${enc(orig)}" aria-label="Swap ${esc(orig)} for another exercise" title="Swap exercise">${ic('swap')}</button></div>
+          ${plan.mode==='plan'&&orig!==undefined&&!ex.extra?`<button class="rowbtn" data-act="swapex" data-ex="${enc(orig||name)}" aria-label="Swap ${esc(orig||name)} for another exercise" title="Swap exercise">${ic('swap')}</button>`:''}</div>
         </div><div class="sets">${rows}</div></div>`;
-    });
+    }
   });
-  const ni=(state.liftDay+1)%sp.length;
-  out+=`<button class="btn" data-act="finishday" data-i="${state.liftDay}">${ic('check')} Finish workout${isToday()?` · next up Day ${ni+1} · ${sp[ni].tag}`:''}</button>`;
+  out+=`<button class="btn ghost" data-act="addex" data-k="${k}">${ic('plus')} Add an exercise</button>`;
+  if(plan.mode==='plan'){
+    const ni=(state.liftDay+1)%plan.sp.length;
+    out+=`<button class="btn" data-act="finishday" data-i="${state.liftDay}">${ic('check')} Finish workout${isToday()?` · next up Day ${ni+1} · ${esc(plan.sp[ni].tag)}`:''}</button>`;
+  } else if(!plan.fin){
+    out+=`<button class="btn" data-act="finishday" data-i="${state.liftDay}">${ic('check')} Mark this session finished</button>`;
+  }
   return out;
+}
+/* Add a movement to a session that the program does not contain — the thing
+   that makes logging a past date, or an improvised finisher, actually work. */
+function addExSheet(k){
+  openSheet(`<h3 id="sheetTitle">Add an exercise</h3>
+    <div class="hint c" style="margin-bottom:var(--sp-4)">It is added to <b>${esc(longDayLabel(k))}</b> only — your program is not changed.</div>
+    <input class="field" id="addexn" placeholder="Exercise name" autocomplete="off" list="exlib" aria-label="Exercise name">
+    <datalist id="exlib">${exerciseLibrary().map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist>
+    <button class="btn" data-act="addexdo" data-k="${k}">${ic('plus')} Add</button>`);
+  setTimeout(()=>{ const f=document.getElementById('addexn'); if(f) f.focus(); },60);
 }
 /* Swap an unavailable machine/exercise for a similar one — session-scoped. */
 function swapSheet(orig){
@@ -4943,26 +5088,46 @@ document.addEventListener('click', e=>{
   const el=e.target.closest('[data-act]'); if(!el) return;
   const a=el.dataset.act;
   if(a==='nav'){ if(state.tab!==el.dataset.tab) haptic('tap'); state.tab=el.dataset.tab; render(); }
-  else if(a==='dayprev'){ haptic('tap'); state.day=addDays(curKey(),-1); render(); }
-  else if(a==='daynext'){ const n=addDays(curKey(),1); if(n<=todayKey()){ haptic('tap'); state.day=n; render(); } }
-  else if(a==='daytoday'){ haptic('tap'); state.day=todayKey(); render(); }
+  /* Leaving a date drops the explicit "log a program day here" intent, so it
+     cannot follow the user onto a different day. */
+  else if(a==='dayprev'){ haptic('tap'); state.planned=null; state.day=addDays(curKey(),-1); render(); }
+  else if(a==='daynext'){ const n=addDays(curKey(),1); if(n<=todayKey()){ haptic('tap'); state.planned=null; state.day=n; render(); } }
+  else if(a==='daytoday'){ haptic('tap'); state.planned=null; state.day=todayKey(); render(); }
   else if(a==='pickdate'){ const inp=document.getElementById('dayInput'); if(!inp) return;
     /* showPicker() is the only way to open the native calendar without giving
        the input its own (four-stop) place in the tab order. */
     try{ inp.showPicker(); }catch(err){ inp.focus(); inp.click(); } }
   else if(a==='startlift'){ state.tab='lift'; state.liftDay=+el.dataset.i; render(); }
-  else if(a==='pickday'){ state.liftDay=+el.dataset.i; render(); }
-  else if(a==='settype'){ const ex=dec(el.dataset.ex), i=+el.dataset.i;
+  else if(a==='pickday'){ state.liftDay=+el.dataset.i;
+    /* Picking a day on a past date is an explicit "log this day here". */
+    if(!isToday()) state.planned=curKey();
+    render(); }
+  else if(a==='planday'){ state.planned=el.dataset.k; state.tab='lift'; render();
+    showToast('Pick the day you trained — it will be recorded against '+relDayLabel(el.dataset.k).toLowerCase(),'info'); }
+  else if(a==='addex'){ addExSheet(el.dataset.k||curKey()); }
+  else if(a==='addexdo'){ const k=el.dataset.k||curKey();
+    const nm=normName(val('addexn')); if(!nm){ showToast('Give it a name first','err'); return; }
+    const s=dstore(k);
+    if((s.sets||{})[nm]){ showToast(nm+' is already in this session','err'); closeSheet(); return; }
+    (s.sets=s.sets||{})[nm]=[{}];
+    /* A row with nothing in it yet is not "logged", so on a recorded session it
+       has to join sn.ex explicitly or it would render nowhere. */
+    if(s.sn && Array.isArray(s.sn.ex) && s.sn.ex.indexOf(nm)<0) s.sn.ex.push(nm);
+    /* Only stamps a session record when this date is the one being planned —
+       adding a movement to an old log must not brand it with today's program. */
+    liftWrite(k); touch(k); save(); closeSheet(); render();
+    showToast('Added '+nm,'good'); }
+  else if(a==='settype'){ const ex=dec(el.dataset.ex), i=+el.dataset.i; liftWrite();
     const st=dstore(); const arr=st.sets[ex]||(st.sets[ex]=[]); arr[i]=arr[i]||{};
     const nt=nextSetType(arr[i].t);
     if(nt) arr[i].t=nt; else delete arr[i].t;   /* a working set stores nothing */
     haptic('pick'); touch(); save(); render();
     showToast(setType(arr[i]).name + (nt==='wu' ? ' — left out of volume and records' : ''), 'info'); }
-  else if(a==='addset'){ const ex=dec(el.dataset.ex), n=+el.dataset.n;
+  else if(a==='addset'){ const ex=dec(el.dataset.ex), n=+el.dataset.n; liftWrite();
     const st=dstore(); const arr=st.sets[ex]||(st.sets[ex]=[]);
     while(arr.length<n) arr.push({});          /* materialise the prescribed rows first */
     arr.push({}); haptic('tap'); touch(); save(); render(); }
-  else if(a==='delset'){ const ex=dec(el.dataset.ex), min=+el.dataset.min;
+  else if(a==='delset'){ const ex=dec(el.dataset.ex), min=+el.dataset.min; liftWrite();
     const st=dstore(); const arr=st.sets[ex]||[];
     /* Only ever removes rows beyond the prescription, and never one with
        something in it — the button is not a way to lose a logged set. */
@@ -4992,6 +5157,7 @@ document.addEventListener('click', e=>{
       const start=(s.sess && s.sess.s) || nowMs();
       s.sess=Object.assign({}, s.sess, {s:start, e:nowMs()});
       touch(); }
+    if(s.sn) s.sn.fin=1;
     /* Only a session finished TODAY moves the split forward. Paging back to
        correct last Tuesday and tapping Finish used to advance the live
        rotation, silently skipping whatever was actually next. */
@@ -5003,14 +5169,14 @@ document.addEventListener('click', e=>{
       if(f && !reduced()){ f.classList.remove('on'); void f.offsetWidth; f.classList.add('on'); setTimeout(()=>f.classList.remove('on'),1200); }
       tone(659,0.18,0.10); setTimeout(()=>tone(880,0.22,0.11),110); setTimeout(()=>tone(1319,0.34,0.10),230);
     } else celebrate(isToday()? 'Workout logged · next up '+sp[ni].tag : 'Workout logged'); }
-  else if(a==='usesuggest'){ const ex=dec(el.dataset.ex), w=el.dataset.w; const s=dstore(); const arr=s.sets[ex]||(s.sets[ex]=[]);
+  else if(a==='usesuggest'){ const ex=dec(el.dataset.ex), w=el.dataset.w; liftWrite(); const s=dstore(); const arr=s.sets[ex]||(s.sets[ex]=[]);
     /* Scoped to the card the button lives in. Matching by name across the whole
        document is one duplicate name away from filling two exercises at once. */
     const card=el.closest('.ex')||document;
     let n=0; card.querySelectorAll('input[data-in="setw"]').forEach(inp=>{ if(dec(inp.dataset.ex)===ex&&!inp.value){ const i=+inp.dataset.i; inp.value=w; arr[i]=arr[i]||{}; arr[i].w=w; n++;
       inp.classList.remove('autofilled'); void inp.offsetWidth; inp.classList.add('autofilled'); } });
     if(n){ touch(); save(); showToast('Filled '+n+' set'+(n===1?'':'s')+' with '+w+' '+data.unit,'good'); } else showToast('Those sets are already filled'); }
-  else if(a==='setdone'){ const ex=dec(el.dataset.ex),i=+el.dataset.i; markSessionStart(); const s=dstore(); const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{}; arr[i].done=!arr[i].done;
+  else if(a==='setdone'){ const ex=dec(el.dataset.ex),i=+el.dataset.i; liftWrite(); const s=dstore(); const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{}; arr[i].done=!arr[i].done;
     /* Carry the set TYPE along with the numbers. Copying last session's
        warm-up weight and reps into a row that stays a working set turns a
        135lb ramp into completed work — inflating volume and tonnage, and
@@ -5317,7 +5483,9 @@ document.addEventListener('click', e=>{
 });
 document.addEventListener('change', e=>{
   if(e.target && e.target.id==='dayInput'){ let v=e.target.value; if(!v) return;
-    const tk=todayKey(); if(v>tk) v=tk; state.day=v; render(); }
+    const tk=todayKey(); if(v>tk) v=tk;
+    state.planned=null;      /* same rule as the arrows: leaving a date drops the intent */
+    state.day=v; render(); }
 });
 document.addEventListener('input', e=>{
   const el=e.target.closest('[data-in]'); if(!el) return;
@@ -5331,7 +5499,7 @@ document.addEventListener('input', e=>{
     const box=document.getElementById('foodresults'); if(box) box.innerHTML=foodResultsHTML(el.value);
     scheduleFoodSearch(el.value); return; }
   const s=dstore();
-  if(a==='setw'||a==='setr'){ markSessionStart(); const ex=dec(el.dataset.ex),i=+el.dataset.i; const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{}; arr[i][a==='setw'?'w':'r']=el.value; touch(); save(); }
+  if(a==='setw'||a==='setr'){ liftWrite(); const ex=dec(el.dataset.ex),i=+el.dataset.i; const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{}; arr[i][a==='setw'?'w':'r']=el.value; touch(); save(); }
   if(a==='pgname'){ const v=normName(el.value); if(v) pgEdit(p=>{ p.name=v; }); return; }
   if(a==='pgdtag'||a==='pgdname'){ const i=+el.dataset.d; const v=normName(el.value);
     pgEdit(p=>{ const d=p.days[i]; if(!d) return;
@@ -5360,7 +5528,7 @@ document.addEventListener('input', e=>{
     if(a==='mealname'){ const v=el.value.trim(); L[i]=Object.assign({},L[i],{name:v||L[i].name}); }
     else L[i]=Object.assign({},L[i],{h:Math.max(0,Math.min(23,parseInt(el.value,10)||0))});
     mealsWrite(L); return; }
-  if(a==='setrir'){ const ex=dec(el.dataset.ex),i=+el.dataset.i; const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{};
+  if(a==='setrir'){ liftWrite(); const ex=dec(el.dataset.ex),i=+el.dataset.i; const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{};
     const v=parseFloat(el.value);
     if(el.value===''||isNaN(v)) delete arr[i].rir; else arr[i].rir=Math.max(0,Math.min(10,v));
     touch(); save(); }
