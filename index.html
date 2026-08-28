@@ -2077,7 +2077,17 @@ function noteStorageError(e){
   STORAGE_ERR=(e && (e.name==='QuotaExceededError'||e.name==='NS_ERROR_DOM_QUOTA_REACHED'||e.code===22||e.code===1014))
     ? 'full' : 'blocked';
 }
-function storageChars(){ try{ return JSON.stringify(data).length; }catch(e){ return 0; } }
+/* MEASURED, NOT RE-MEASURED. paintStorageAlert() runs inside every render(),
+   so computing this the naive way serialised the entire blob — base64 progress
+   photos and all — on every tab switch and every set you tick, and threw all of
+   it away except the length. Both writers already stringify, so the size is
+   free there; between saves the cached value is at most 150ms stale, which is
+   far inside the tolerance of a "you are running out of room" warning. */
+let _blobChars=null;
+function storageChars(){
+  if(_blobChars==null){ try{ _blobChars=JSON.stringify(data).length; }catch(e){ _blobChars=0; } }
+  return _blobChars;
+}
 function photoChars(){ let n=0;
   Object.keys(data.dates||{}).forEach(k=>{ ((data.dates[k]||{}).photos||[]).forEach(p=>{ n+=String(p).length; }); });
   return n; }
@@ -2180,12 +2190,14 @@ function runMigrations(){
 let saveTimer=null;
 function save(){
   clearTimeout(saveTimer);
-  saveTimer=setTimeout(()=>{ try{ localStorage.setItem(KEY, JSON.stringify(data)); STORAGE_OK=true; STORAGE_ERR=null; lastSaveOk=nowMs(); }
-    catch(e){ noteStorageError(e); paintStorageAlert(); }
+  saveTimer=setTimeout(()=>{ try{ const s=JSON.stringify(data); localStorage.setItem(KEY, s);
+      _blobChars=s.length; STORAGE_OK=true; STORAGE_ERR=null; lastSaveOk=nowMs(); }
+    catch(e){ _blobChars=null; noteStorageError(e); paintStorageAlert(); }
     schedulePush(); }, 150);
 }
-function persistLocal(){ try{ localStorage.setItem(KEY, JSON.stringify(data)); STORAGE_OK=true; STORAGE_ERR=null; lastSaveOk=nowMs(); }
-  catch(e){ noteStorageError(e); paintStorageAlert(); } }
+function persistLocal(){ try{ const s=JSON.stringify(data); localStorage.setItem(KEY, s);
+    _blobChars=s.length; STORAGE_OK=true; STORAGE_ERR=null; lastSaveOk=nowMs(); }
+  catch(e){ _blobChars=null; noteStorageError(e); paintStorageAlert(); } }
 function touch(k){ k=k||curKey(); const s=dstore(k); s._u=nowMs(); }
 function touchSettings(){ data.updatedAt=nowMs(); }
 /* ---------------- STATE ---------------- */
@@ -2470,10 +2482,12 @@ function isWarmup(st){ return !!(st && st.t==='wu'); }
 function countsAsWork(st){ return !!(st && st.done && st.t!=='wu'); }
 function nextSetType(t){ const i=SET_TYPES.findIndex(x=>x.id===(t||'')); return SET_TYPES[(i+1)%SET_TYPES.length].id; }
 
-function lastFor(exName){
-  const keys=Object.keys(data.dates).filter(k=>k<curKey()).sort().reverse();
-  for(const k of keys){ const arr=(data.dates[k].sets||{})[exName];
-    if(arr){ for(let i=arr.length-1;i>=0;i--){ const st=arr[i]; if(st&&(st.w||st.r)) return `Last: ${esc(st.w||'–')} × ${esc(st.r||'–')}`; } } }
+/* The "Last: 225 × 8" line, read off a previous session already in hand rather
+   than by rescanning every date for it. */
+function lastLine(ls){
+  if(!ls) return '';
+  for(let i=ls.length-1;i>=0;i--){ const st=ls[i];
+    if(st&&(st.w||st.r)) return `Last: ${esc(st.w||'–')} × ${esc(st.r||'–')}`; }
   return '';
 }
 function lastSets(exName){
@@ -2685,9 +2699,13 @@ function repRange(r){ r=String(r); if(/hold|sec/i.test(r)) return null;
 function fmtWt(w){ w=Math.round(w*100)/100; return (Number.isInteger(w)?w:parseFloat(w.toFixed(2))).toString(); }
 /* Suggest next-session load: if every weighted set last time hit the top of the rep
    range, add the smallest plate step and reset to the bottom; otherwise repeat and beat reps. */
-function suggestWeight(ex){
+function suggestWeight(ex, ls){
   const rr=repRange(ex.r); if(!rr) return null;
-  const ls=lastSets(ex.n); if(!ls) return null;
+  /* Callers that already hold the previous session pass it in: viewLift needs
+     the same array for its row placeholders, and scanning every date twice per
+     exercise per render is the single most expensive thing on the Lift tab. */
+  ls = ls!==undefined ? ls : lastSets(ex.n);
+  if(!ls) return null;
   /* Warm-ups must not vote. They are light and often high-rep, so including
      them can make every set look like it hit the top of the range and hand out
      a weight increase the user never earned. */
@@ -2734,10 +2752,10 @@ function viewLift(){
       const swapName=(s.swaps&&s.swaps[orig])||'';
       const ex = swapName? Object.assign({},ex0,{n:swapName}) : ex0;
       const name=ex.n;
-      const saved=s.sets[name]||[];
-      const last=lastFor(name);
+      const saved=(s.sets&&s.sets[name])||[];
       const ls=lastSets(name);
-      const sg=suggestWeight(ex);
+      const last=lastLine(ls);
+      const sg=suggestWeight(ex, ls);
       /* The prescription is a floor, not a cage: extra sets logged today render
          alongside the planned ones. */
       const rowN=Math.max(ex.s, saved.length);
@@ -2779,7 +2797,7 @@ function viewLift(){
     });
   });
   const ni=(state.liftDay+1)%sp.length;
-  out+=`<button class="btn" data-act="finishday" data-i="${state.liftDay}">${ic('check')} Finish workout · next up Day ${ni+1} · ${sp[ni].tag}</button>`;
+  out+=`<button class="btn" data-act="finishday" data-i="${state.liftDay}">${ic('check')} Finish workout${isToday()?` · next up Day ${ni+1} · ${sp[ni].tag}`:''}</button>`;
   return out;
 }
 /* Swap an unavailable machine/exercise for a similar one — session-scoped. */
@@ -4305,7 +4323,14 @@ const SB_ROW='tracker_data';
 function syncDefault(){ return {enabled:false,url:'',anonKey:'',email:'',token:'',refresh:'',userId:'',last:0}; }
 function loadSync(){ try{ const r=localStorage.getItem('sb_sync'); if(r){ const o=JSON.parse(r); if(o&&typeof o==='object'&&'url'in o) return Object.assign(syncDefault(),o); } }catch(e){} return syncDefault(); }
 function saveSync(){ try{ localStorage.setItem('sb_sync', JSON.stringify(sync)); }catch(e){} }
-function syncPayload(){ const d=JSON.parse(JSON.stringify(data)); Object.keys(d.dates||{}).forEach(k=>{ if(d.dates[k]) delete d.dates[k].photos; }); return JSON.stringify(d); }
+/* Returns an object. It used to stringify, parse, strip, stringify — and the
+   caller then parsed it again to nest it in a request body: five passes over
+   the whole blob where one deep clone does. */
+function syncPayload(){
+  const d=JSON.parse(JSON.stringify(data));
+  Object.keys(d.dates||{}).forEach(k=>{ if(d.dates[k]) delete d.dates[k].photos; });
+  return d;
+}
 /* Auth (GoTrue) */
 async function supAuth(path,body){ const r=await fetch(sync.url+'/auth/v1/'+path,{method:'POST',headers:{'apikey':sync.anonKey,'Content-Type':'application/json'},body:JSON.stringify(body)}); const j=await r.json().catch(()=>({})); return {ok:r.ok,status:r.status,j}; }
 function supSetSession(j){ sync.token=j.access_token; sync.refresh=j.refresh_token||sync.refresh; sync.userId=(j.user&&j.user.id)||sync.userId; if(j.user&&j.user.email) sync.email=j.user.email; }
@@ -4322,7 +4347,7 @@ async function supPull(){ const r=await supFetch('/rest/v1/'+SB_ROW+'?select=pay
 async function supPush(){ if(!sync.userId) return;
   /* Never overwrite a newer schema with an older build's idea of the data. */
   if(SCHEMA_AHEAD){ setSyncDot('err'); return; }
-  const body=[{user_id:sync.userId, payload:JSON.parse(syncPayload()), updated_at:new Date().toISOString()}];
+  const body=[{user_id:sync.userId, payload:syncPayload(), updated_at:new Date().toISOString()}];
   const r=await supFetch('/rest/v1/'+SB_ROW,{method:'POST',headers:{'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(body)}); if(!r.ok) throw 0; }
 /* Returns false when it refused the payload. Every caller then does the right
    thing without knowing why: nothing is merged, and supPush() declines too, so
@@ -4443,15 +4468,22 @@ document.addEventListener('click', e=>{
          workout — clamp rather than record a number nobody will believe. */
       if(s.sess.e-s.sess.s > 5*3600000) s.sess.s=s.sess.e-5*3600000;
       touch(); }
-    setRot(ni); state.liftDay=ni; touchSettings(); save(); state.tab='today'; render();
+    /* Only a session finished TODAY moves the split forward. Paging back to
+       correct last Tuesday and tapping Finish used to advance the live
+       rotation, silently skipping whatever was actually next. */
+    if(isToday()){ setRot(ni); state.liftDay=ni; touchSettings(); }
+    save(); state.tab='today'; render();
     const shown = had && sessionSheet();
     if(shown){ haptic('win');
       const f=document.getElementById('flare');
       if(f && !reduced()){ f.classList.remove('on'); void f.offsetWidth; f.classList.add('on'); setTimeout(()=>f.classList.remove('on'),1200); }
       tone(659,0.18,0.10); setTimeout(()=>tone(880,0.22,0.11),110); setTimeout(()=>tone(1319,0.34,0.10),230);
-    } else celebrate('Workout logged · next up '+sp[ni].tag); }
+    } else celebrate(isToday()? 'Workout logged · next up '+sp[ni].tag : 'Workout logged'); }
   else if(a==='usesuggest'){ const ex=dec(el.dataset.ex), w=el.dataset.w; const s=dstore(); const arr=s.sets[ex]||(s.sets[ex]=[]);
-    let n=0; document.querySelectorAll('input[data-in="setw"]').forEach(inp=>{ if(dec(inp.dataset.ex)===ex&&!inp.value){ const i=+inp.dataset.i; inp.value=w; arr[i]=arr[i]||{}; arr[i].w=w; n++;
+    /* Scoped to the card the button lives in. Matching by name across the whole
+       document is one duplicate name away from filling two exercises at once. */
+    const card=el.closest('.ex')||document;
+    let n=0; card.querySelectorAll('input[data-in="setw"]').forEach(inp=>{ if(dec(inp.dataset.ex)===ex&&!inp.value){ const i=+inp.dataset.i; inp.value=w; arr[i]=arr[i]||{}; arr[i].w=w; n++;
       inp.classList.remove('autofilled'); void inp.offsetWidth; inp.classList.add('autofilled'); } });
     if(n){ touch(); save(); showToast('Filled '+n+' set'+(n===1?'':'s')+' with '+w+' '+data.unit,'good'); } else showToast('Those sets are already filled'); }
   else if(a==='setdone'){ const ex=dec(el.dataset.ex),i=+el.dataset.i; markSessionStart(); const s=dstore(); const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{}; arr[i].done=!arr[i].done;
