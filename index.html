@@ -369,6 +369,12 @@
   .row2{display:flex;gap:var(--sp-2)}
   .row2 > *{flex:1;min-width:0}
   .inline{display:flex;gap:var(--sp-2);align-items:center}
+  .tdee{text-align:center;margin-bottom:var(--sp-3)}
+  .tdee-v{font-family:var(--f-display);font-size:var(--fs-3xl);font-weight:700;letter-spacing:-.035em;
+    line-height:1;color:var(--t1);font-variant-numeric:normal}
+  .tdee-v u{font:inherit;font-family:var(--f-body);font-size:.34em;font-weight:600;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--t3);text-decoration:none;margin-left:.4em;vertical-align:baseline}
+  .tdee-l{font-size:var(--fs-xs);color:var(--t3);margin-top:7px}
   .tgt-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-3);margin-bottom:var(--sp-1)}
   .tgt-f{display:flex;flex-direction:column;gap:var(--sp-2)}
   .tgt-f span{font-size:var(--fs-cap);color:var(--t3);letter-spacing:var(--tr-cap);
@@ -486,8 +492,32 @@
   .wd.today .dots::after{content:"";position:absolute;inset:-6px -9px;border-radius:var(--r-sm);
     border:1px solid var(--sel-line)}
   .legend{display:flex;gap:var(--sp-4);justify-content:center;margin-top:var(--sp-4);
-    font-size:var(--fs-xs);color:var(--t3)}
+    font-size:var(--fs-xs);color:var(--t3);flex-wrap:wrap}
   .legend span{display:flex;align-items:center;gap:7px}
+  .legend .swatch{width:14px;height:3px;border-radius:2px;flex:none}
+  .vol{padding:var(--sp-3) 0;border-top:1px solid var(--hair)}
+  .vol:first-of-type{border-top:none;padding-top:0}
+  .vol-h{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-2);margin-bottom:8px}
+  .vol-n{font-size:var(--fs-sm);font-weight:600}
+  .vol-c{font-size:var(--fs-xs);color:var(--t3);white-space:nowrap}
+  .vol-c b{color:var(--t1)}
+  .vol-z.in{color:var(--good)} .vol-z.over{color:var(--warn)}
+  .vol-z.under,.vol-z.none{color:var(--t3)}
+  .vol-track{position:relative;height:9px;border-radius:var(--r-full);background:var(--s3);
+    box-shadow:inset 0 0 0 1px var(--track-edge);overflow:hidden}
+  .vol-band{position:absolute;top:0;bottom:0;background:var(--s4);
+    box-shadow:inset 1px 0 0 var(--line-2), inset -1px 0 0 var(--line-2)}
+  .vol-fill{position:absolute;left:0;top:0;bottom:0;border-radius:var(--r-full);
+    background:var(--t3);transition:width var(--d-5) var(--ease-out)}
+  .vol-fill.in{background:var(--good)}
+  .vol-fill.under{background:var(--t3)}
+  .vol-fill.over{background:var(--warn)}
+  .ebal{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-3);
+    padding-bottom:var(--sp-3);border-bottom:1px solid var(--hair)}
+  .ebal-i{min-width:0}
+  .ebal-v{font-family:var(--f-display);font-size:var(--fs-xl);font-weight:700;letter-spacing:-.03em;
+    line-height:1;font-variant-numeric:normal}
+  .ebal-l{font-size:var(--fs-cap);color:var(--t3);margin-top:6px}
 
   /* ===================================================================
      LIFT
@@ -513,6 +543,21 @@
     align-items:flex-start;gap:var(--sp-3)}
   .ex-h .nm{font-weight:650;font-size:var(--fs-base);letter-spacing:-.008em;
     display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .ex-h .nm{text-align:left;padding:0;border-radius:var(--r-xs)}
+  .ex-h .nm:hover{text-decoration:underline;text-decoration-color:var(--line-2);text-underline-offset:3px}
+  .exh-list{display:flex;flex-direction:column}
+  .exh{display:flex;align-items:baseline;gap:var(--sp-3);padding:11px var(--sp-1);
+    border-top:1px solid var(--hair)}
+  .exh:first-child{border-top:none}
+  .exh-d{font-size:var(--fs-xs);color:var(--t3);flex:none;width:104px}
+  .exh-s{flex:1;min-width:0;display:flex;flex-wrap:wrap;gap:6px}
+  .exh-s span{font-size:var(--fs-xs);font-family:var(--f-num);font-variant-numeric:tabular-nums;
+    background:var(--s2);border:1px solid var(--line);border-radius:var(--r-xs);padding:3px 7px;
+    white-space:nowrap}
+  .exh-s i{color:var(--t4);font-style:normal;margin:0 3px}
+  .exh-e{flex:none;font-size:var(--fs-sm);font-weight:650;color:var(--t1);width:44px;text-align:right}
+  .pr-n{text-align:left;padding:0;font-weight:600;font-size:var(--fs-sm)}
+  .pr-n:hover{text-decoration:underline;text-decoration-color:var(--line-2);text-underline-offset:3px}
   .ex-h .tg{font-size:var(--fs-xs);color:var(--t3);margin-top:4px;font-family:var(--f-num);font-variant-numeric:tabular-nums}
   .ex-h .last{font-size:var(--fs-xs);color:var(--t3);margin-top:5px}
   .ex-h .sugg{display:inline-flex;align-items:center;gap:7px;margin-top:7px;min-height:38px;
@@ -665,6 +710,7 @@
   .fr-star.on .ic{fill:currentColor}
   .fr-info{flex:1;min-width:0}
   .fr-nm{font-weight:600;font-size:var(--fs-sm)}
+  .fr-sub .per{color:var(--t4)}
   .fr-sub{font-size:var(--fs-xs);color:var(--t3);margin-top:3px;font-family:var(--f-num);font-variant-numeric:tabular-nums}
   .fd-macros{font-size:var(--fs-sm);color:var(--t3);text-align:center;margin-bottom:var(--sp-4)}
   .fd-macros b{color:var(--t1)}
@@ -905,6 +951,44 @@
     border:2px solid rgba(47,227,199,.25);border-top-color:var(--accent);animation:spin .7s linear infinite}
   .sync-dot.err{background:var(--bad);box-shadow:0 0 0 3px var(--bad-soft)}
   @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ===================================================================
+     ONBOARDING — the first run, and the only place the app asks for anything
+     =================================================================== */
+  .onb{position:absolute;inset:0;z-index:55;display:none;flex-direction:column;
+    padding:calc(env(safe-area-inset-top) + var(--sp-6)) var(--sp-5) calc(env(safe-area-inset-bottom) + var(--sp-5));
+    background:radial-gradient(120% 60% at 50% -8%, #0D1A18, var(--bg) 62%);overflow-y:auto}
+  .onb.on{display:flex;animation:lockIn var(--d-4) var(--ease-out)}
+  .onb-wrap{width:100%;max-width:420px;margin:auto;display:flex;flex-direction:column;gap:var(--sp-4)}
+  .onb-steps{display:flex;gap:6px;justify-content:center}
+  .onb-steps i{width:26px;height:3px;border-radius:2px;background:var(--s4);transition:background var(--d-3) var(--ease)}
+  .onb-steps i.on{background:var(--accent)}
+  .onb h2{font-family:var(--f-display);font-size:var(--fs-2xl);letter-spacing:-.025em;text-align:center}
+  .onb .sub{font-size:var(--fs-sm);color:var(--t3);text-align:center;line-height:var(--lh-base);
+    max-width:34ch;margin:0 auto}
+  .onb-field{display:flex;flex-direction:column;gap:7px}
+  .onb-field > span{font-size:var(--fs-cap);color:var(--t3);letter-spacing:var(--tr-cap);
+    text-transform:uppercase;font-weight:700}
+  .onb-pick{display:grid;gap:var(--sp-2)}
+  .onb-opt{display:flex;align-items:center;gap:var(--sp-3);width:100%;text-align:left;
+    padding:13px var(--sp-4);border:1px solid var(--line-field);border-radius:var(--r-md);
+    background:var(--s2);color:var(--t1);min-height:var(--tap);
+    transition:background var(--d-2) var(--ease),border-color var(--d-2) var(--ease)}
+  .onb-opt small{display:block;font-size:var(--fs-xs);color:var(--t3);margin-top:2px}
+  .onb-opt .t{flex:1;min-width:0;font-size:var(--fs-sm);font-weight:600}
+  .onb-opt .tick{width:20px;height:20px;flex:none;border-radius:50%;border:1px solid var(--line-field)}
+  .onb-opt:hover{background:var(--s3)}
+  .onb-opt.on{border-color:var(--accent);background:var(--accent-soft)}
+  .onb-opt.on .tick{background:var(--accent);border-color:var(--accent);
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2304130F' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 12.5l5 5 10-11'/%3E%3C/svg%3E");
+    background-size:13px;background-position:center;background-repeat:no-repeat}
+  .onb-row{display:flex;gap:var(--sp-2)}
+  .onb-row > *{flex:1;min-width:0}
+  .onb-actions{display:flex;flex-direction:column;gap:var(--sp-2);margin-top:var(--sp-2)}
+  .onb-skip{color:var(--t3);font-size:var(--fs-sm);padding:10px;border-radius:var(--r-sm)}
+  .onb-skip:hover{color:var(--t1);background:var(--s2)}
+  .onb-mark{width:56px;height:56px;border-radius:15px;display:block;margin:0 auto;
+    box-shadow:0 10px 26px rgba(0,0,0,.6), 0 0 0 1px var(--line)}
 
   /* ===================================================================
      PIN LOCK
@@ -1213,6 +1297,7 @@
     <button data-act="rest-15" aria-label="Take 15 seconds off the rest timer">−15s</button><button data-act="rest+15" aria-label="Add 15 seconds to the rest timer">+15s</button><button class="skip" data-act="restskip">Skip</button></div>
   <div class="sheet-bg" data-act="closesheet"></div>
   <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" tabindex="-1"></div>
+  <div class="onb" id="onboard" role="dialog" aria-modal="true" aria-label="Set up Physiq"></div>
   <div class="lock" id="lock">
     <div class="lock-head">
       <img class="lock-logo-img" src="data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgd2lkdGg9IjEyMCIgaGVpZ2h0PSIxMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsPSJQaHlzaXEgYXBwIGljb24iPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJwcUJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iIzFiMWUyNCIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzBhMGIwZSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjEyMCIgaGVpZ2h0PSIxMjAiIHJ4PSIyNyIgZmlsbD0idXJsKCNwcUJnKSIvPgogIDwhLS0gcHJvZ3Jlc3MgcmluZyBmb3JtaW5nIHRoZSBib3dsIG9mIHRoZSBxIC0tPgogIDxjaXJjbGUgY3g9IjU4IiBjeT0iNTUiIHI9IjMwIiBmaWxsPSJub25lIiBzdHJva2U9IiNlZWYxZjQiIHN0cm9rZS13aWR0aD0iMTEiCiAgICAgICAgICBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1kYXNoYXJyYXk9IjE1OCAzMCIgdHJhbnNmb3JtPSJyb3RhdGUoNjAgNTggNTUpIi8+CiAgPCEtLSB0aGUgcSB0YWlsIC8gbW9tZW50dW0gYWNjZW50IC0tPgogIDxwYXRoIGQ9Ik03MyA2OCBMOTAgODYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzJmZTNjNyIgc3Ryb2tlLXdpZHRoPSIxMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+Cjwvc3ZnPgo=" alt="Physiq">
@@ -1679,23 +1764,25 @@ const SWAP_GROUPS = [
 function similarExercises(name){ for(const g of SWAP_GROUPS){ if(g.t.test(name)) return g.alts.filter(a=>a.toLowerCase()!==String(name).toLowerCase()); } return []; }
 /* Program phases — each drives the macro targets the whole app tracks against. */
 // Auto coefficients are per POUND of bodyweight (kcalPerLb, proteinPerLb) and % of calories (fatPct).
+// goalPct is the intended rate of bodyweight change per week, as a percentage of
+// bodyweight — the number the adaptive engine steers toward.
 const PHASES = [
   {id:'recomp', name:'Recomp', tagline:'Maintain · recomposition',
    desc:'Hold near maintenance and slowly trade fat for muscle, protein kept high. Moderate, priority-biased volume — delts, arms, and core get first call; front delts stay restrained since heavy pressing already feeds them.',
    kc:2000, p:160, c:215, f:56, deload:8, cardio:'Cardio daily · core on Legs & Upper days · calves on Pull & Delt/Arm days',
-   kcalPerLb:12.5, proteinPerLb:1.0, fatPct:0.25},
+   kcalPerLb:12.5, proteinPerLb:1.0, fatPct:0.25, goalPct:0},
   {id:'bulk', name:'Lean Bulk', tagline:'Controlled surplus',
    desc:'A controlled surplus to add size while staying tight. Volume is highest here — recovery is best when you are fed, so push growth. Shifted toward hypertrophy rep ranges, with side/rear delt and core work on every day.',
    kc:2450, p:180, c:290, f:65, deload:8, cardio:'Cardio 2–3×/week to stay conditioned',
-   kcalPerLb:15.3, proteinPerLb:1.1, fatPct:0.24},
+   kcalPerLb:15.3, proteinPerLb:1.1, fatPct:0.24, goalPct:0.25},
   {id:'cut', name:'Cut', tagline:'Fat loss',
    desc:'A moderate deficit to strip fat while holding muscle. Volume is trimmed below Recomp — in a deficit, effort and load retain muscle, not extra sets — while the higher-rep feel and daily cardio stay.',
    kc:1650, p:185, c:120, f:45, deload:6, cardio:'Cardio daily · 30–40 min low-intensity',
-   kcalPerLb:10.3, proteinPerLb:1.15, fatPct:0.25},
+   kcalPerLb:10.3, proteinPerLb:1.15, fatPct:0.25, goalPct:-0.6},
   {id:'prep', name:'Contest Prep', tagline:'Stage-ready',
    desc:'An aggressive deficit to reach stage condition. Volume is lowest by design — recovery is worst, so maintain muscle with heavy loads and high effort rather than chase growth. Posing and conditioning do the extra work.',
    kc:1450, p:190, c:90, f:38, deload:6, cardio:'Cardio up to 2×/day · low-intensity',
-   kcalPerLb:9.0, proteinPerLb:1.2, fatPct:0.23},
+   kcalPerLb:9.0, proteinPerLb:1.2, fatPct:0.23, goalPct:-0.8},
 ];
 const TARGET = {kc:2000, p:160, c:215, f:56};
 function activePhase(){ return PHASES.find(p=>p.id===(data&&data.phase))||PHASES[0]; }
@@ -1712,6 +1799,7 @@ function phaseMode(id){ const m=data&&data.phaseMode&&data.phaseMode[id]; if(m) 
   const o=data&&data.phaseTargets&&data.phaseTargets[id]; return (o&&Object.keys(o).length)?'custom':'standard'; }
 /* Effective target = the active mode: standard defaults, a custom override, or auto-from-bodyweight. */
 function effectiveTarget(id){ const d=phaseDefaults(id), mode=phaseMode(id);
+  if(mode==='adaptive'){ const a=adaptiveTarget(id); if(a) return {kc:a.kc,p:a.p,c:a.c,f:a.f}; }
   if(mode==='auto'){ const a=autoTarget(id); if(a) return a; }
   if(mode==='custom'){ const o=(data&&data.phaseTargets&&data.phaseTargets[id])||{}; const num=(v,def)=>{ v=parseFloat(v); return isNaN(v)?def:v; };
     return {kc:num(o.kc,d.kc), p:num(o.p,d.p), c:num(o.c,d.c), f:num(o.f,d.f)}; }
@@ -1764,6 +1852,12 @@ function ensureDefaults(){ let ch=false; if(!data.blockStart){ data.blockStart=t
       if(d.meals){ Object.keys(d.meals).forEach(id=>{ if(d.meals[id]&&pm[id]) d.log.push(Object.assign({},pm[id])); }); delete d.meals; }
       if(d.extras){ d.extras.forEach(e=>{ const p=+e.p||0,c=+e.c||0,f=+e.f||0; if(p||c||f) d.log.push({name:e.name||'Extra',p,c,f}); }); delete d.extras; } });
     data.migratedFood=true; ch=true; }
+  if(!data.onboarded){
+    /* Anyone with a history predates onboarding — never gate an existing log. */
+    const used = Object.keys(data.dates||{}).length>0 || data.pinHash || data.lockSkipped
+      || (data.foods||[]).length>0 || Object.keys(data.phaseTargets||{}).length>0;
+    if(used){ data.onboarded=true; ch=true; }
+  }
   if(ch) save(); }
 function blockWeeks(){ const s=data.blockStart||todayKey(); const a=new Date(s+'T00:00'),b=new Date(todayKey()+'T00:00'); return Math.max(0,Math.floor((b-a)/(7*86400000))); }
 function todayKey(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -1781,6 +1875,125 @@ function dayTotals(k){
   k=k||curKey(); const s=data.dates[k]; let t={kc:0,p:0,c:0,f:0}; if(!s) return t;
   (s.log||[]).forEach(e=>{ const p=+e.p||0,c=+e.c||0,f=+e.f||0; t.p+=p;t.c+=c;t.f+=f;t.kc+=p*4+c*4+f*9; });
   return t;
+}
+
+
+/* ---------------- ENERGY MODEL ----------------
+   The app already records what you ate and what you weighed, every day. That is
+   exactly the pair of series needed to measure what you actually burn, so the
+   targets are derived from your own data rather than from a coefficient.
+
+   Energy balance over a window:  TDEE = mean intake - (weight change x 3500) / days
+   The weight term uses the least-squares slope of the *smoothed* series, so one
+   salty Tuesday does not move the estimate. */
+const KCAL_PER_LB = 3500;      /* conventional energy density of body-mass change */
+const TDEE_WINDOW = 28;        /* days of history the estimate looks at */
+const TDEE_MIN_DAYS = 10;      /* intake days needed before we trust a measurement */
+const TDEE_MIN_SPAN = 10;      /* days the weigh-ins must span */
+
+function profile(){ return (data && data.profile) || {}; }
+/* Mifflin-St Jeor, the standard predictive equation. Used as the starting point
+   before there is enough logged history to measure the real number. */
+function mifflinBMR(){
+  const p=profile(), bw=latestWeightLb();
+  if(!p.sex || !p.age || !p.heightIn || bw==null) return null;
+  const kg=bw/2.20462, cm=p.heightIn*2.54;
+  const base=10*kg + 6.25*cm - 5*p.age;
+  return Math.round(base + (p.sex==='male' ? 5 : -161));
+}
+const ACTIVITY = [
+  {id:'sed',   name:'Mostly seated',   sub:'Desk job, little movement outside training', mult:1.3},
+  {id:'light', name:'Lightly active',  sub:'On your feet some of the day',               mult:1.42},
+  {id:'mod',   name:'Active',          sub:'On your feet most of the day',               mult:1.55},
+  {id:'high',  name:'Very active',     sub:'Manual work, or a lot of daily steps',       mult:1.7}
+];
+function activityMult(){ const a=ACTIVITY.find(x=>x.id===profile().activity); return a?a.mult:1.5; }
+function formulaTDEE(){ const b=mifflinBMR(); return b==null? null : Math.round(b*activityMult()); }
+
+/* Every day in the window, with its logged intake (null when nothing was logged). */
+function energyDays(win, endKey){
+  win=win||TDEE_WINDOW;
+  const out=[]; const end=endKey||todayKey();
+  for(let i=win-1;i>=0;i--){
+    const k=addDays(end,-i), d=data.dates[k];
+    const kc=d? (d.log||[]).reduce((a,e)=>a+entryKc(e),0) : 0;
+    /* A day with a token amount logged is a day someone forgot, not a fast. */
+    out.push({k, kc: kc>=500? kc : null, w: d && d.weight!=null ? d.weight : null});
+  }
+  return out;
+}
+function lastWeightBefore(key){
+  const ks=Object.keys(data.dates||{}).filter(k=>k<=key && data.dates[k] && data.dates[k].weight!=null).sort();
+  return ks.length? data.dates[ks[ks.length-1]].weight : latestWeightLb();
+}
+/* Least-squares slope in lb per day over the smoothed weigh-ins. */
+function weightSlope(days){
+  const w=days.map((d,i)=>({i,v:d.w})).filter(x=>x.v!=null);
+  if(w.length<2) return null;
+  const span=w[w.length-1].i-w[0].i;
+  if(span<TDEE_MIN_SPAN) return null;
+  const sm=movingAvg(w.map(x=>({k:x.i,v:x.v})),5);
+  const pts=(sm.length?sm:w.map(x=>({k:x.i,v:x.v}))).map((p,j)=>({x:w[j].i,y:p.v}));
+  const n=pts.length;
+  const mx=pts.reduce((a,p)=>a+p.x,0)/n, my=pts.reduce((a,p)=>a+p.y,0)/n;
+  let num=0, den=0;
+  pts.forEach(p=>{ num+=(p.x-mx)*(p.y-my); den+=(p.x-mx)*(p.x-mx); });
+  if(!den) return null;
+  return {slope:num/den, span, points:n};
+}
+/* {kcal, source:'measured'|'formula'|'bodyweight', days, span, trend} or null. */
+/* `asOf` defaults to YESTERDAY: today is still being logged, and averaging a
+   half-finished day in as though it were complete drags the estimate down. */
+function estimateTDEE(asOf){
+  const end=asOf||addDays(todayKey(),-1);
+  const days=energyDays(TDEE_WINDOW, end);
+  const fed=days.filter(d=>d.kc!=null);
+  const sl=weightSlope(days);
+  const bw=lastWeightBefore(end);
+  if(fed.length>=TDEE_MIN_DAYS && sl){
+    const mean=fed.reduce((a,d)=>a+d.kc,0)/fed.length;
+    let kcal=Math.round(mean - sl.slope*KCAL_PER_LB);
+    /* Guard rails: a mis-logged week should never produce an absurd target. */
+    const lo=bw!=null?Math.max(1200,Math.round(bw*7)):1200;
+    const hi=bw!=null?Math.round(bw*24):6000;
+    if(kcal>=lo && kcal<=hi){
+      return {kcal, source:'measured', days:fed.length, span:sl.span,
+              trendPerWeek:+(sl.slope*7).toFixed(2), meanIntake:Math.round(mean)};
+    }
+  }
+  const f=formulaTDEE();
+  if(f) return {kcal:f, source:'formula', days:fed.length, span:sl?sl.span:0};
+  if(bw!=null){ const d=phaseDefaults(activePhase().id);
+    return {kcal:Math.round(bw*d.kcalPerLb), source:'bodyweight', days:fed.length, span:0}; }
+  return null;
+}
+/* Expenditure recomputed for each of the last `win` days, so it can be plotted
+   against intake. Only the measured estimates are plotted — a formula line would
+   just be a restatement of bodyweight. */
+function tdeeSeries(win){
+  win=win||42; const out=[]; const end=addDays(todayKey(),-1);
+  for(let i=win-1;i>=0;i--){
+    const k=addDays(end,-i);
+    const e=estimateTDEE(k);
+    if(e && e.source==='measured') out.push({k, v:e.kcal});
+  }
+  return out;
+}
+/* Target = measured expenditure, plus the surplus or deficit this phase asks for. */
+function adaptiveTarget(id){
+  const est=estimateTDEE(); if(!est) return null;
+  const d=phaseDefaults(id), bw=latestWeightLb(); if(bw==null) return null;
+  const ratePerWeek=bw*(d.goalPct||0)/100;
+  let kc=Math.round((est.kcal + ratePerWeek*KCAL_PER_LB/7)/10)*10;
+  /* Two floors, whichever bites first: never below ~5% over BMR, and never more
+     than a 28% deficit — a percentage-of-bodyweight goal gets very steep at the
+     heavy end, and an aggressive cut should be a choice, not a default. */
+  const floor=Math.max(1200, Math.round((mifflinBMR()||bw*5)*1.05), Math.round(est.kcal*0.72));
+  if(kc<floor) kc=floor;
+  const p=Math.round(bw*d.proteinPerLb);
+  const f=Math.round(kc*d.fatPct/9);
+  let c=Math.round((kc-p*4-f*9)/4); if(c<0) c=0;
+  return {kc,p,c,f,est,ratePerWeek};
 }
 
 /* ---------------- RENDER HELPERS ---------------- */
@@ -1957,6 +2170,61 @@ function viewToday(){
   </div>`;
   return out;
 }
+/* ---- Per-exercise history ----
+   Every set of every session is already stored; this is the view that turns it
+   into progress you can see. Sessions newest first, with the estimated 1RM of
+   the best set each day as the trend. */
+function exerciseHistory(name){
+  const out=[];
+  Object.keys(data.dates||{}).sort().forEach(k=>{
+    const arr=((data.dates[k]||{}).sets||{})[name];
+    if(!arr) return;
+    const sets=arr.filter(st=>st&&(st.w||st.r));
+    if(!sets.length) return;
+    let bestE=0, bestSet=null, volume=0, reps=0;
+    sets.forEach(st=>{
+      const w=parseFloat(st.w), r=parseInt(st.r,10);
+      if(!isNaN(r)&&r>0){ reps+=r; if(!isNaN(w)&&w>0){ volume+=w*r; const e=w*(1+r/30);
+        if(e>bestE){ bestE=e; bestSet=st; } } }
+    });
+    out.push({k, sets, bestE, bestSet, volume, reps,
+              done: sets.filter(st=>st.done).length});
+  });
+  return out;
+}
+function exerciseSheet(name){
+  const hist=exerciseHistory(name);
+  if(!hist.length){
+    openSheet(`<h3 id="sheetTitle">${esc(name)}</h3>
+      <div class="empty">${ic('dumbbell')}No sets logged for this exercise yet. Once you log a few, your history and estimated 1RM trend show up here.</div>`);
+    return;
+  }
+  const withE=hist.filter(h=>h.bestE>0);
+  const best=withE.reduce((a,h)=>h.bestE>(a?a.bestE:0)?h:a, null);
+  const last=hist[hist.length-1];
+  const chart = withE.length>=2
+    ? chartSVG(withE.map(h=>({k:h.k, v:toUnitNum(h.bestE)})),
+               movingAvg(withE.map(h=>({k:h.k, v:toUnitNum(h.bestE)})),3),
+               {id:'ex', color:'var(--accent)', unit:data.unit, dec:0})
+    : `<div class="empty">${ic('chart')}Log a couple more weighted sessions to see the trend.</div>`;
+  const rows=hist.slice().reverse().slice(0,24).map(h=>`
+    <div class="exh">
+      <div class="exh-d">${new Date(h.k+'T00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}</div>
+      <div class="exh-s">${h.sets.map(st=>`<span>${esc(st.w||'–')}<i>×</i>${esc(st.r||'–')}</span>`).join('')}</div>
+      ${h.bestE>0?`<div class="exh-e num">${trimN(Math.round(toUnitNum(h.bestE)))}</div>`:'<div class="exh-e"></div>'}
+    </div>`).join('');
+  openSheet(`<h3 id="sheetTitle">${esc(name)}</h3>
+    <div class="ebal" style="margin-bottom:var(--sp-4)">
+      <div class="ebal-i"><div class="ebal-v num">${hist.length}</div><div class="ebal-l">Sessions</div></div>
+      <div class="ebal-i"><div class="ebal-v num">${best?trimN(Math.round(toUnitNum(best.bestE))):'–'}</div><div class="ebal-l">Best e1RM (${data.unit})</div></div>
+      <div class="ebal-i"><div class="ebal-v num">${last.bestSet?trimN(toUnitNum(parseFloat(last.bestSet.w)))+'×'+last.bestSet.r:'–'}</div><div class="ebal-l">Last best set</div></div>
+    </div>
+    ${chart}
+    <div class="hint c" style="margin-top:var(--sp-2)">Estimated 1RM of the best set each session (Epley).</div>
+    <div class="sect-title">Sessions</div>
+    <div class="exh-list">${rows}</div>
+    ${hist.length>24?`<div class="hint c">Showing the last 24 of ${hist.length}.</div>`:''}`);
+}
 /* ---- double-progression auto weight suggestion ---- */
 function repRange(r){ r=String(r); if(/hold|sec/i.test(r)) return null;
   const m=r.match(/(\d+)\s*[–-]\s*(\d+)/); if(m) return {lo:+m[1],hi:+m[2]};
@@ -2027,7 +2295,7 @@ function viewLift(){
         : (last?`<div class="last">${last}</div>`:'');
       out+=`<div class="ex ${ex.p?'pri':''} ${allDone?'complete':''}">
         <div class="ex-h"><div class="grow">
-          <div class="nm">${esc(name)}${ex.foc?' <span class="foc-badge">focus</span>':''}${ex.int?` <span class="int-badge" title="on the final set">+${ex.int}</span>`:''}</div>
+          <button class="nm" data-act="exhist" data-ex="${enc(name)}" aria-label="History for ${esc(name)}">${esc(name)}${ex.foc?' <span class="foc-badge">focus</span>':''}${ex.int?` <span class="int-badge" title="on the final set">+${ex.int}</span>`:''}</button>
           <div class="tg">${ex.s} × ${ex.r}${ex.rir?` · ${ex.rir} RIR`:''}</div>${swapNote}${suggestion}</div>
         <div class="ex-r">${ex.p?'<span class="pill">Priority</span>':''}
           <button class="rowbtn" data-act="swapex" data-ex="${enc(orig)}" aria-label="Swap ${esc(orig)} for another exercise" title="Swap exercise">${ic('swap')}</button></div>
@@ -2135,6 +2403,73 @@ function viewFuel(){
 }
 function fmtAmt(n){ return (Math.round(n*100)/100).toString(); }
 const BARCODE_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5v14M7 5v14M11 5v14M14 5v14M17 5v14M21 5v14"/></svg>';
+/* ---- Searching the public food database ----
+   Barcode lookup already used Open Food Facts; this is the same source by name,
+   for when you are not holding a package. It is deliberately a *second* section
+   under your own foods: a bodybuilder eats the same forty things, and the saved
+   list should always win. Everything is per 100 g, which is what the database
+   stores, and nothing is saved until you confirm it. */
+const OFF_BASE='https://world.openfoodfacts.org';
+let foodSearchT=null, foodSearchSeq=0;
+function offNum(v){ v=parseFloat(v); return isNaN(v)?0:Math.round(v); }
+function offMap(pr){
+  const n=pr.nutriments||{};
+  const name=(pr.product_name||'').trim();
+  if(!name) return null;
+  const kc=offNum(n['energy-kcal_100g']);
+  const p=offNum(n.proteins_100g), c=offNum(n.carbohydrates_100g), f=offNum(n.fat_100g);
+  if(!p && !c && !f && !kc) return null;
+  return {name, brand:(pr.brands||'').split(',')[0].trim(), code:pr.code||'', p, c, f,
+          kc: kc || Math.round(p*4+c*4+f*9)};
+}
+async function searchExternal(q){
+  const fields='code,product_name,brands,nutriments';
+  const urls=[
+    `${OFF_BASE}/api/v2/search?search_terms=${enc(q)}&page_size=20&fields=${fields}`,
+    `${OFF_BASE}/cgi/search.pl?search_terms=${enc(q)}&search_simple=1&action=process&json=1&page_size=20&fields=${fields}`
+  ];
+  for(const url of urls){
+    try{
+      const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),8000);
+      const r=await fetch(url,{signal:ctrl.signal}); clearTimeout(to);
+      if(!r.ok) continue;
+      const j=await r.json();
+      const list=(j&&j.products)||[];
+      const mapped=list.map(offMap).filter(Boolean);
+      if(mapped.length) return mapped;
+    }catch(e){ /* try the next endpoint */ }
+  }
+  return [];
+}
+function remoteBox(){ return document.getElementById('foodremote'); }
+function scheduleFoodSearch(q){
+  clearTimeout(foodSearchT);
+  const box=remoteBox(); if(!box) return;
+  q=(q||'').trim();
+  if(q.length<3){ box.innerHTML=''; return; }
+  foodSearchT=setTimeout(()=>runFoodSearch(q), 450);
+}
+async function runFoodSearch(q){
+  const box=remoteBox(); if(!box) return;
+  const seq=++foodSearchSeq;
+  box.innerHTML=`<div class="sect-title">Food database</div><div class="hint c">Searching…</div>`;
+  let res=[];
+  try{ res=await searchExternal(q); }catch(e){ res=[]; }
+  if(seq!==foodSearchSeq || (state.foodQuery||'').trim()!==q) return;   /* a newer query won */
+  if(!res.length){
+    box.innerHTML=`<div class="sect-title">Food database</div>
+      <div class="hint c">${navigator.onLine===false?'Offline — your own foods are still searchable.':'Nothing found. Create the food and it is yours from then on.'}</div>`;
+    return;
+  }
+  state.foodRemote=res;
+  box.innerHTML=`<div class="sect-title">Food database</div>`+res.map((f,i)=>`
+    <div class="foodrow" data-act="pickremote" data-i="${i}">
+      <span class="fr-star" aria-hidden="true">${ic('search')}</span>
+      <div class="fr-info"><div class="fr-nm">${esc(f.name)}</div>
+        <div class="fr-sub">${f.brand?esc(f.brand)+' · ':''}${f.p}P · ${f.c}C · ${f.f}F · ${f.kc} kcal <span class="per">per 100 g</span></div></div>
+      <span class="rowbtn accent" aria-hidden="true">${ic('plus')}</span></div>`).join('')
+    + `<div class="hint c">Open Food Facts — check the numbers against the label before you log them.</div>`;
+}
 /* ---- Add-food browse screen (search · favorites · create · scan) ---- */
 function logSheet(){
   state.sheetMeal=state.fuelMeal||defaultMeal(); state.foodQuery=''; state.foodCtx='log';
@@ -2149,7 +2484,8 @@ function logSheet(){
       <button class="btn ghost sm" data-act="quickadd">${ic('bolt')} Quick add</button>
       <button class="btn ghost sm" data-act="createfood">${ic('plus')} Create food</button>
     </div>
-    <div id="foodresults">${foodResultsHTML('')}</div>`);
+    <div id="foodresults">${foodResultsHTML('')}</div>
+    <div id="foodremote"></div>`);
 }
 function foodRow(f,opts){
   opts=opts||{};
@@ -2423,7 +2759,9 @@ function chartSVG(pts,trend,opts){
   if(pts.length<2) return `<div class="empty">${ic('chart')}Log at least two entries to see your trend.</div>`;
   const color=opts.color||'var(--accent)', unit=opts.unit||data.unit, dec=opts.dec==null?1:opts.dec;
   const W=480,H=170,padL=8,padR=8,padT=18,padB=24;
-  const all=pts.map(p=>p.v).concat(trend.map(p=>p.v)).concat(opts.target?[opts.target]:[]);
+  const s2=opts.series2 && opts.series2.pts && opts.series2.pts.length ? opts.series2 : null;
+  const all=pts.map(p=>p.v).concat(trend.map(p=>p.v))
+    .concat(s2?s2.pts.map(p=>p.v):[]).concat(opts.target?[opts.target]:[]);
   let min=Math.min(...all), max=Math.max(...all);
   if(min===max){ min-=1; max+=1; }
   /* Label the real extremes; pad only the drawing range so marks clear the edge. */
@@ -2432,6 +2770,11 @@ function chartSVG(pts,trend,opts){
   const x=i=>padL+(i/(pts.length-1))*(W-padL-padR);
   const y=v=>H-padB-((v-min)/(max-min))*(H-padT-padB);
   const line=arr=>arr.map((p,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(p.v).toFixed(1)).join(' ');
+  /* A second series is keyed to the same dates, so it is positioned by date
+     rather than by index — the two series need not have the same length. */
+  const byDate=arr=>arr.map((p,i)=>{ const j=pts.findIndex(q=>q.k===p.k);
+    return {x: j<0? x(i) : x(j), y:y(p.v)}; });
+  const line2=arr=>byDate(arr).map((p,i)=>(i?'L':'M')+p.x.toFixed(1)+' '+p.y.toFixed(1)).join(' ');
   const series=trend.length?trend:pts;
   const d=line(series);
   const area=d+` L ${x(series.length-1).toFixed(1)} ${H-padB} L ${x(0).toFixed(1)} ${H-padB} Z`;
@@ -2452,11 +2795,12 @@ function chartSVG(pts,trend,opts){
     <path d="${area}" fill="url(#${gid})"/>
     ${dots}
     <path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${s2?`<path d="${line2(s2.pts)}" fill="none" stroke="${s2.color}" stroke-width="2" stroke-linejoin="round"
+      stroke-linecap="round" stroke-dasharray="${s2.dash||''}"/>`:''}
     <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="4" fill="${color}" stroke="var(--s1)" stroke-width="2"/>
-    <text class="axis" x="${padL}" y="${H-6}">${fmtd(pts[0].k)}</text>
-    <text class="axis" x="${W-padR}" y="${H-6}" text-anchor="end">${fmtd(pts[pts.length-1].k)}</text>
     <text class="axis" x="${padL}" y="${(padT-6).toFixed(1)}">${hi.toFixed(dec)}</text>
-    <text class="axis" x="${W-padR}" y="${(padT-6).toFixed(1)}" text-anchor="end">${lo.toFixed(dec)}</text>
+    <text class="axis" x="${padL}" y="${H-6}">${lo.toFixed(dec)}</text>
+    <text class="axis" x="${W-padR}" y="${H-6}" text-anchor="end">${fmtd(pts[0].k)} – ${fmtd(pts[pts.length-1].k)}</text>
     <g class="crosshair" style="display:none"><line class="chx" y1="${padT}" y2="${H-padB}" stroke="var(--line-2)"/>
       <circle class="chd" r="4" fill="${color}" stroke="var(--s1)" stroke-width="2"/>
       <text class="axis chl" text-anchor="middle" y="${padT-6}" style="fill:var(--t1);font-size:11px"></text></g>
@@ -2516,14 +2860,42 @@ function viewProgram(){
 }
 function targetsSheet(){
   const ph=activePhase(), id=ph.id, d=phaseDefaults(id), mode=phaseMode(id), t=effectiveTarget(id);
-  const seg=['standard','auto','custom'].map(m=>`<button class="${m===mode?'on':''}" data-act="tgtmode" data-m="${m}" aria-pressed="${m===mode}">${m[0].toUpperCase()+m.slice(1)}</button>`).join('');
+  const MODES=[['adaptive','Adaptive'],['standard','Standard'],['auto','Formula'],['custom','Custom']];
+  const seg=MODES.map(([m,label])=>`<button class="${m===mode?'on':''}" data-act="tgtmode" data-m="${m}" aria-pressed="${m===mode}">${label}</button>`).join('');
   const tiles=v=>`<div class="tiles">
       <div class="tile"><div class="big">${v.kc}</div><div class="lab">Calories</div></div>
       <div class="tile"><div class="big">${v.p}<small>g</small></div><div class="lab">Protein</div></div>
       <div class="tile"><div class="big">${v.c}<small>g</small></div><div class="lab">Carbs</div></div>
       <div class="tile"><div class="big">${v.f}<small>g</small></div><div class="lab">Fat</div></div></div>`;
   let body='';
-  if(mode==='auto'){
+  if(mode==='adaptive'){
+    const a=adaptiveTarget(id), est=estimateTDEE();
+    if(!a || !est){
+      body=`<div class="empty">${ic('target')}Log a bodyweight on the Body tab to start. Once you have about two weeks of food and weigh-ins, Physiq measures what you actually burn and sets your targets from that.</div>`;
+    } else {
+      const src=est.source;
+      const line = src==='measured'
+        ? `Measured from <b>${est.days} logged days</b> and <b>${est.span+1} days</b> of weigh-ins.`
+        : src==='formula'
+          ? `Estimated from your height, age and activity. It switches to measuring your real expenditure after about two weeks of logging.`
+          : `Estimated from bodyweight alone. Add your details in Settings, and keep logging, for a real measurement.`;
+      const trend = est.trendPerWeek!=null
+        ? `${est.trendPerWeek>0?'+':''}${trimN(toUnitNum(est.trendPerWeek))} ${data.unit}/week now`
+        : '';
+      const goal = Math.abs(a.ratePerWeek)<0.05 ? 'to hold your weight'
+        : `${a.ratePerWeek>0?'+':''}${trimN(toUnitNum(a.ratePerWeek))} ${data.unit}/week`;
+      body=`<div class="tdee">
+          <div class="tdee-v num">${est.kcal.toLocaleString()}<u>kcal/day</u></div>
+          <div class="tdee-l">what you burn${src!=='measured'?' (estimated)':''}</div>
+        </div>
+        <div class="hint c" style="margin-bottom:var(--sp-4)">${line}</div>
+        <div class="between hint" style="margin:0 var(--sp-1) var(--sp-3)">
+          <span>Aiming ${goal.startsWith('to ')?'':'for '}<b>${goal}</b></span>${trend?`<span>${trend}</span>`:''}</div>
+        ${tiles(a)}
+        <div class="hint c" style="margin-top:var(--sp-3)">Recalculated every time you weigh in or log food.</div>`;
+    }
+  }
+  else if(mode==='auto'){
     const bw=latestWeightLb();
     const wLine = bw!=null
       ? `Auto from bodyweight <b>${trimN(toUnitNum(bw))} ${data.unit}</b> · <b>${d.proteinPerLb}g/lb</b> protein · <b>${Math.round(d.fatPct*100)}%</b> fat · <b>${d.kcalPerLb}</b> kcal/lb`
@@ -2569,7 +2941,7 @@ function viewPRs(){
     <div class="prose">Your best effort on every exercise you've logged. Estimated 1-rep max uses the Epley formula, so a hard set of 8 can still beat a heavy triple.</div></div>`;
   prs.forEach(p=>{ const line=p.type==='w'?`${trimN(p.w)} ${data.unit} × ${p.r}`:`${p.r} reps · bodyweight`;
     const e=p.type==='w'?`<div class="pr-e">est 1RM<b>${trimN(Math.round(p.e))} ${data.unit}</b></div>`:'';
-    out+=`<div class="pr"><div class="pr-ic">${ic('trophy')}</div><div class="pr-i"><div class="pr-n">${esc(p.ex)}</div><div class="pr-s">${line}</div>
+    out+=`<div class="pr"><div class="pr-ic">${ic('trophy')}</div><div class="pr-i"><button class="pr-n" data-act="exhist" data-ex="${enc(p.ex)}" aria-label="History for ${esc(p.ex)}">${esc(p.ex)}</button><div class="pr-s">${line}</div>
       <div class="pr-d">${new Date(p.date+'T00:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</div></div>${e}</div>`; });
   return out;
 }
@@ -2623,6 +2995,99 @@ function celebrate(msg){
     setTimeout(()=>f.classList.remove('on'),1200); }
   tone(659,0.18,0.10); setTimeout(()=>tone(880,0.22,0.11),110); setTimeout(()=>tone(1319,0.34,0.10),230);
 }
+/* ---- Weekly volume by muscle ----
+   The exercise-to-muscle classifier already exists for the focus feature; this
+   is the other thing it is good for. Counts completed sets over the current
+   week and places them against general hypertrophy landmarks.
+
+   The ranges below are widely-cited starting points, not prescriptions — the
+   card says so, because a number in a box reads as authority whether or not it
+   has earned it. */
+const VOLUME_LANDMARKS=[
+  {id:'chest',     name:'Chest',     lo:12, hi:20, max:24},
+  {id:'back',      name:'Back',      lo:14, hi:22, max:26},
+  {id:'shoulders', name:'Shoulders', lo:14, hi:22, max:26},
+  {id:'arms',      name:'Arms',      lo:12, hi:20, max:24},
+  {id:'legs',      name:'Legs',      lo:12, hi:18, max:22},
+  {id:'calves',    name:'Calves',    lo:10, hi:16, max:20},
+  {id:'abs',       name:'Abs',       lo:10, hi:20, max:24}
+];
+function weeklyVolume(keys){
+  const counts={}; VOLUME_LANDMARKS.forEach(m=>counts[m.id]=0);
+  let unmatched=0;
+  (keys||weekKeys()).forEach(k=>{
+    const sets=((data.dates[k]||{}).sets)||{};
+    Object.keys(sets).forEach(ex=>{
+      const done=(sets[ex]||[]).filter(st=>st&&st.done).length;
+      if(!done) return;
+      const ms=musclesOf(ex);
+      if(!ms.length){ unmatched+=done; return; }
+      ms.forEach(m=>{ if(counts[m]!=null) counts[m]+=done; });
+    });
+  });
+  return {counts, unmatched};
+}
+function volumeCard(){
+  const {counts, unmatched}=weeklyVolume();
+  const total=Object.values(counts).reduce((a,n)=>a+n,0);
+  if(!total && !unmatched) return `<div class="card"><div class="card-k"><span>Volume</span></div>
+    <div class="empty">${ic('dumbbell')}Tick sets off as you train and your weekly volume by muscle appears here.</div></div>`;
+  const rows=VOLUME_LANDMARKS.map(m=>{
+    const n=counts[m.id];
+    const scale=Math.max(m.max, n*1.08);
+    const pc=v=>Math.max(0,Math.min(100,(v/scale)*100));
+    /* The drawn band is the target range, so the label reads off the same thing
+       the eye does. Mid-week, being under the weekly range is a to-do rather
+       than a failure — so it says what is left, in a neutral voice, and only
+       going *over* is flagged. */
+    const zone = n===0?'none' : n<m.lo?'under' : n>m.hi?'over' : 'in';
+    const label = zone==='in' ? 'in range'
+      : zone==='over' ? 'above range'
+      : `${m.lo-n} to go`;
+    return `<div class="vol">
+      <div class="vol-h"><span class="vol-n">${m.name}</span>
+        <span class="vol-c"><b class="num">${n}</b> ${n===1?'set':'sets'} · <span class="vol-z ${zone}">${label}</span></span></div>
+      <div class="vol-track">
+        <i class="vol-band" style="left:${pc(m.lo)}%;width:${pc(m.hi)-pc(m.lo)}%"></i>
+        <i class="vol-fill ${zone}" data-fill="${pc(n)}%" style="width:${pc(n)}%"></i>
+      </div></div>`;
+  }).join('');
+  return `<div class="card span2"><div class="card-k"><span>Volume by muscle</span><span>${total} sets this week</span></div>
+    ${rows}
+    <div class="legend"><span><i class="swatch" style="background:var(--s4)"></i>Weekly range</span>
+      <span><i class="swatch" style="background:var(--good)"></i>In it</span>
+      <span><i class="swatch" style="background:var(--warn)"></i>Over it</span></div>
+    <div class="hint tail">Completed sets only, grouped from the exercise name. The ranges are common starting points for hypertrophy, not prescriptions — your own recovery is the real limit.${
+      unmatched?` <b>${unmatched}</b> ${unmatched===1?'set was':'sets were'} not matched to a muscle group.`:''}</div>
+  </div>`;
+}
+/* What you burn, against what you ate — the pair of series the targets come from. */
+function energyCard(){
+  const est=estimateTDEE();
+  if(!est) return '';
+  const intake=energyDays(42, addDays(todayKey(),-1)).filter(d=>d.kc!=null).map(d=>({k:d.k, v:d.kc}));
+  const tdee=tdeeSeries(42);
+  const mean=intake.length? Math.round(intake.reduce((a,d)=>a+d.v,0)/intake.length) : 0;
+  const net=mean-est.kcal;
+  const measured=est.source==='measured';
+  let out=`<div class="card span2"><div class="card-k"><span>Energy</span>
+    <span>${measured?est.days+' logged days':'estimated'}</span></div>
+    <div class="ebal">
+      <div class="ebal-i"><div class="ebal-v num">${est.kcal.toLocaleString()}</div><div class="ebal-l">Burned / day</div></div>
+      <div class="ebal-i"><div class="ebal-v num">${mean.toLocaleString()}</div><div class="ebal-l">Eaten / day</div></div>
+      <div class="ebal-i"><div class="ebal-v num ${net<-40?'delta down':net>40?'delta up':'delta flat'}">${net>0?'+':''}${net.toLocaleString()}</div><div class="ebal-l">Balance</div></div>
+    </div>`;
+  if(measured && intake.length>2){
+    out+=chartSVG(intake, movingAvg(intake,7), {id:'en', color:MC.kc, unit:'kcal', dec:0,
+      series2:{pts:tdee, color:'var(--t1)'}});
+    out+=`<div class="legend"><span><i class="swatch" style="background:${MC.kc}"></i>Eaten</span>
+      <span><i class="swatch" style="background:var(--t1)"></i>Burned</span></div>`;
+  }
+  out+=`<div class="hint tail">${measured
+    ? `Measured from your own log — what you ate, against what your weight actually did. This is what the adaptive targets are built on.`
+    : `Estimated until you have about two weeks of food and weigh-ins logged. After that Physiq measures it from your own data.`}</div>`;
+  return out+`</div>`;
+}
 function viewWeek(){
   const keys=weekKeys(), tk=todayKey();
   const sessions=keys.filter(k=>sessionDone(k)).length;
@@ -2650,6 +3115,8 @@ function viewWeek(){
   } else out+=`<div class="empty">${ic('body')}Log two weigh-ins this week to see your change.</div>`;
   out+=`</div>`;
   out+=`<div class="card"><div class="card-k"><span>Your week</span></div>${weekStrip()}</div>`;
+  out+=volumeCard();
+  out+=energyCard();
   const wpts=Object.keys(data.dates).filter(k=>data.dates[k].weight!=null).sort()
     .map(k=>({k,v:toUnitNum(data.dates[k].weight)})).slice(-60);
   if(wpts.length>=2) out+=`<div class="card span2"><div class="card-k"><span>Bodyweight trend</span>
@@ -2868,6 +3335,130 @@ function homeSheet(){ openSheet(`<h3 id="sheetTitle">Add to Home Screen</h3>
   It opens full-screen like a native app, works with no connection at all, and your data stays on the device.</div>
   <button class="btn" data-act="closesheet2">Got it</button>`); }
 
+/* ---------------- ONBOARDING ----------------
+   Three screens, asked once. The point is not the form — it is that the energy
+   model needs a starting point before there is enough logged history to measure
+   the real one, and that a first-run user should not land on targets that came
+   from nowhere. Skippable, because a wall on first launch loses more people
+   than a missing profile costs. */
+let onb=null;
+function onbLogo(){ const img=document.querySelector('.lock-logo-img'); return img?img.getAttribute('src'):''; }
+function startOnboarding(){
+  onb={step:0, sex:'', age:'', ft:'', inch:'', cm:'', weight:'', unit:data.unit||'lb',
+       phase:data.phase||'recomp', activity:'light'};
+  document.getElementById('onboard').classList.add('on');
+  renderOnboard();
+}
+function onbSave(){
+  const el=id=>document.getElementById(id);
+  if(el('onbAge')) onb.age=el('onbAge').value;
+  if(el('onbFt')) onb.ft=el('onbFt').value;
+  if(el('onbIn')) onb.inch=el('onbIn').value;
+  if(el('onbCm')) onb.cm=el('onbCm').value;
+  if(el('onbWeight')) onb.weight=el('onbWeight').value;
+}
+function onbHeightIn(){
+  if(onb.unit==='kg'){ const cm=parseFloat(onb.cm); return isNaN(cm)?null:cm/2.54; }
+  const f=parseFloat(onb.ft), i=parseFloat(onb.inch)||0;
+  return isNaN(f)?null:f*12+i;
+}
+function renderOnboard(){
+  const wrap=document.getElementById('onboard');
+  const dots=[0,1,2].map(i=>`<i class="${i<=onb.step?'on':''}"></i>`).join('');
+  let body='';
+  if(onb.step===0){
+    body=`<img class="onb-mark" src="${onbLogo()}" alt="">
+      <h2>Welcome to Physiq</h2>
+      <div class="sub">A few details so your targets start from you, not from an average.</div>
+      <div class="onb-field"><span>Units</span>
+        <div class="seg" style="margin:0">
+          <button class="${onb.unit==='lb'?'on':''}" data-act="onbunit" data-v="lb" aria-pressed="${onb.unit==='lb'}">Pounds</button>
+          <button class="${onb.unit==='kg'?'on':''}" data-act="onbunit" data-v="kg" aria-pressed="${onb.unit==='kg'}">Kilograms</button></div></div>
+      <div class="onb-field"><span>Sex</span>
+        <div class="seg" style="margin:0">
+          <button class="${onb.sex==='male'?'on':''}" data-act="onbsex" data-v="male" aria-pressed="${onb.sex==='male'}">Male</button>
+          <button class="${onb.sex==='female'?'on':''}" data-act="onbsex" data-v="female" aria-pressed="${onb.sex==='female'}">Female</button></div>
+        <div class="hint">Used only by the formula that estimates your starting expenditure.</div></div>
+      <div class="onb-row">
+        <div class="onb-field"><span>Age</span>
+          <input class="field" id="onbAge" inputmode="numeric" placeholder="years" value="${esc(onb.age)}" aria-label="Age in years"></div>
+        <div class="onb-field"><span>Weight</span>
+          <input class="field" id="onbWeight" inputmode="decimal" placeholder="${onb.unit}" value="${esc(onb.weight)}" aria-label="Bodyweight in ${onb.unit}"></div>
+      </div>
+      <div class="onb-field"><span>Height</span>${onb.unit==='kg'
+        ? `<input class="field" id="onbCm" inputmode="numeric" placeholder="cm" value="${esc(onb.cm)}" aria-label="Height in centimetres">`
+        : `<div class="onb-row"><input class="field" id="onbFt" inputmode="numeric" placeholder="ft" value="${esc(onb.ft)}" aria-label="Height, feet">
+             <input class="field" id="onbIn" inputmode="numeric" placeholder="in" value="${esc(onb.inch)}" aria-label="Height, inches"></div>`}</div>
+      <div class="errline" id="onbErr"></div>
+      <div class="onb-actions"><button class="btn" data-act="onbnext">Continue</button>
+        <button class="onb-skip" data-act="onbskip">Skip setup</button></div>`;
+  }
+  else if(onb.step===1){
+    body=`<h2>What are you training for?</h2>
+      <div class="sub">This sets your calorie goal and how much volume the program prescribes. You can change it any time.</div>
+      <div class="onb-pick">${PHASES.map(p=>`
+        <button class="onb-opt ${onb.phase===p.id?'on':''}" data-act="onbphase" data-v="${p.id}" aria-pressed="${onb.phase===p.id}">
+          <span class="t">${p.name}<small>${p.tagline}${p.goalPct?` · ${p.goalPct>0?'+':''}${p.goalPct}% bodyweight a week`:' · hold weight'}</small></span>
+          <span class="tick"></span></button>`).join('')}</div>
+      <div class="onb-actions"><button class="btn" data-act="onbnext">Continue</button>
+        <button class="onb-skip" data-act="onbback">Back</button></div>`;
+  }
+  else {
+    const bmr=onbPreviewBMR(), tdee=bmr?Math.round(bmr*(ACTIVITY.find(a=>a.id===onb.activity)||{mult:1.5}).mult):null;
+    const ph=PHASES.find(p=>p.id===onb.phase)||PHASES[0];
+    const bw=onbWeightLb();
+    let preview='';
+    if(tdee && bw){
+      const kc=Math.max(1200,Math.round((tdee + bw*(ph.goalPct||0)/100*KCAL_PER_LB/7)/10)*10);
+      const p=Math.round(bw*ph.proteinPerLb), f=Math.round(kc*ph.fatPct/9);
+      const c=Math.max(0,Math.round((kc-p*4-f*9)/4));
+      preview=`<div class="tdee"><div class="tdee-v num">${kc.toLocaleString()}<u>kcal/day</u></div>
+        <div class="tdee-l">${p}g protein · ${c}g carbs · ${f}g fat</div></div>
+        <div class="hint c">A starting point from your details. Physiq measures what you actually burn once you have logged a couple of weeks, and adjusts from there.</div>`;
+    }
+    body=`<h2>How active are you?</h2>
+      <div class="sub">Outside of training — everything from your job to your step count.</div>
+      <div class="onb-pick">${ACTIVITY.map(a=>`
+        <button class="onb-opt ${onb.activity===a.id?'on':''}" data-act="onbact" data-v="${a.id}" aria-pressed="${onb.activity===a.id}">
+          <span class="t">${a.name}<small>${a.sub}</small></span><span class="tick"></span></button>`).join('')}</div>
+      ${preview}
+      <div class="onb-actions"><button class="btn" data-act="onbdone">Start tracking</button>
+        <button class="onb-skip" data-act="onbback">Back</button></div>`;
+  }
+  wrap.innerHTML=`<div class="onb-wrap"><div class="onb-steps">${dots}</div>${body}</div>`;
+}
+function onbWeightLb(){ const w=parseFloat(onb.weight); if(isNaN(w)||w<=0) return null;
+  return onb.unit==='kg'? w*2.20462 : w; }
+function onbPreviewBMR(){
+  const bw=onbWeightLb(), h=onbHeightIn(), age=parseInt(onb.age,10);
+  if(bw==null||h==null||isNaN(age)||!onb.sex) return null;
+  return Math.round(10*(bw/2.20462) + 6.25*(h*2.54) - 5*age + (onb.sex==='male'?5:-161));
+}
+function onbValidate(){
+  const err=document.getElementById('onbErr');
+  const age=parseInt(onb.age,10), bw=onbWeightLb(), h=onbHeightIn();
+  let msg='';
+  if(!onb.sex) msg='Pick one so the formula can estimate your expenditure.';
+  else if(isNaN(age)||age<13||age>100) msg='Enter an age between 13 and 100.';
+  else if(bw==null) msg='Enter your current bodyweight.';
+  else if(h==null||h<48||h>90) msg='Enter your height.';
+  if(err) err.textContent=msg;
+  return !msg;
+}
+function finishOnboarding(skipped){
+  if(!skipped){
+    const bw=onbWeightLb();
+    data.unit=onb.unit;
+    data.profile={sex:onb.sex, age:parseInt(onb.age,10), heightIn:Math.round(onbHeightIn()*10)/10, activity:onb.activity};
+    data.phase=onb.phase;
+    (data.phaseMode=data.phaseMode||{})[onb.phase]='adaptive';
+    if(bw!=null) dstore(todayKey()).weight=bw;
+  }
+  data.onboarded=true; touchSettings(); save();
+  document.getElementById('onboard').classList.remove('on');
+  onb=null;
+  applyPhase(); state.liftDay=getRot(); render(); initLock();
+}
 /* ---------------- PIN LOCK ---------------- */
 let lockMode='enter', buf='', firstPin='';
 function hashPin(p){ let h=5381; const s=String(p)+'|cp7salt'; for(let i=0;i<s.length;i++){ h=((h<<5)+h)+s.charCodeAt(i); h|=0; } return String(h>>>0); }
@@ -3000,6 +3591,7 @@ document.addEventListener('click', e=>{
   else if(a==='startlift'){ state.tab='lift'; state.liftDay=+el.dataset.i; render(); }
   else if(a==='pickday'){ state.liftDay=+el.dataset.i; render(); }
   else if(a==='swapex'){ swapSheet(dec(el.dataset.ex)); }
+  else if(a==='exhist'){ exerciseSheet(dec(el.dataset.ex)); }
   else if(a==='pickswap'){ setSwap(dec(el.dataset.orig), dec(el.dataset.new)); }
   else if(a==='swapmanual'){ setSwap(dec(el.dataset.orig), val('swapman')); }
   else if(a==='revertswap'){ setSwap(dec(el.dataset.orig), ''); }
@@ -3029,7 +3621,7 @@ document.addEventListener('click', e=>{
   else if(a==='segprs'){ state.statsView='prs'; render(); }
   else if(a==='setphase'){ const p=el.dataset.p; if(PHASES.some(x=>x.id===p)&&p!==data.phase){ data.phase=p; applyPhase(); state.liftDay=getRot(); touchSettings(); save(); render(); showToast('Switched to '+activePhase().name,'good'); } }
   else if(a==='edittargets'){ targetsSheet(); }
-  else if(a==='tgtmode'){ const m=el.dataset.m, id=activePhase().id; if(['standard','auto','custom'].indexOf(m)<0) return;
+  else if(a==='tgtmode'){ const m=el.dataset.m, id=activePhase().id; if(['adaptive','standard','auto','custom'].indexOf(m)<0) return;
     if(m==='custom'){ const cur=effectiveTarget(id); (data.phaseTargets=data.phaseTargets||{})[id]=Object.assign({}, data.phaseTargets[id]||cur); }
     (data.phaseMode=data.phaseMode||{})[id]=m; applyPhase(); touchSettings(); save(); render(); targetsSheet(); }
   else if(a==='savetargets'){ const g=id=>Math.round(parseFloat(val(id))); const kc=g('tgkc'),p=g('tgp'),c=g('tgc'),f=g('tgf');
@@ -3054,6 +3646,9 @@ document.addEventListener('click', e=>{
   else if(a==='fuelmode'){ state.fuelEnergy=el.dataset.m; render(); }
   else if(a==='fooddetail'){ foodDetailSheet(el.dataset.id); }
   else if(a==='createfood'){ foodFormSheet(); }
+  else if(a==='pickremote'){ const f=(state.foodRemote||[])[+el.dataset.i]; if(!f) return;
+    foodFormSheet(null,{name:f.brand? f.name+' · '+f.brand : f.name, serv:'100 g',
+      p:f.p, c:f.c, f:f.f, barcode:f.code||''}); }
   else if(a==='editfood'){ foodFormSheet(el.dataset.id); }
   else if(a==='quickadd'){ quickAddSheet(); }
   else if(a==='myfoods'){ closeSheet(); myFoodsSheet(); }
@@ -3130,6 +3725,14 @@ document.addEventListener('click', e=>{
   else if(a==='home'){ homeSheet(); }
   else if(a==='reset'){ confirmSheet({title:'Erase everything?', body:'Every workout, weigh-in, photo and food entry on this device will be deleted. This cannot be undone — export a backup first if you want one.',
       confirmLabel:'Erase all data', onYes:()=>{ data={v:1,unit:data.unit,restDefault:data.restDefault||120,dates:{}}; ensureDefaults(); touchSettings(); save(); closeSheet(); render(); showToast('All data erased'); } }); }
+  else if(a==='onbunit'){ onbSave(); onb.unit=el.dataset.v; renderOnboard(); }
+  else if(a==='onbsex'){ onbSave(); onb.sex=el.dataset.v; renderOnboard(); }
+  else if(a==='onbphase'){ onb.phase=el.dataset.v; renderOnboard(); }
+  else if(a==='onbact'){ onb.activity=el.dataset.v; renderOnboard(); }
+  else if(a==='onbnext'){ if(onb.step===0){ onbSave(); if(!onbValidate()) return; } onb.step++; renderOnboard(); }
+  else if(a==='onbback'){ onb.step--; renderOnboard(); }
+  else if(a==='onbdone'){ finishOnboarding(false); }
+  else if(a==='onbskip'){ finishOnboarding(true); }
   else if(a==='locknow'){ closeSheet(); lockMode='enter'; buf=''; showLock(); }
   else if(a==='setpin'){ closeSheet(); lockMode='create'; buf=''; firstPin=''; showLock(); }
   else if(a==='rmpin'){ confirmSheet({title:'Remove the PIN lock?', body:'Physiq will open straight to your log, with no code.',
@@ -3158,7 +3761,9 @@ document.addEventListener('input', e=>{
   if(a==='qtycalc'){ updateQtyCalc(el.dataset.fid); return; }
   if(a==='edcalc'){ updateEdCalc(); return; }
   if(a==='ffcalc'){ updateFfCalc(); return; }
-  if(a==='foodsearch'){ state.foodQuery=el.value; const box=document.getElementById('foodresults'); if(box) box.innerHTML=foodResultsHTML(el.value); return; }
+  if(a==='foodsearch'){ state.foodQuery=el.value;
+    const box=document.getElementById('foodresults'); if(box) box.innerHTML=foodResultsHTML(el.value);
+    scheduleFoodSearch(el.value); return; }
   const s=dstore();
   if(a==='setw'||a==='setr'){ const ex=dec(el.dataset.ex),i=+el.dataset.i; const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{}; arr[i][a==='setw'?'w':'r']=el.value; touch(); save(); }
 });
@@ -3284,7 +3889,8 @@ document.getElementById('lockLink').addEventListener('click', ()=>{
       confirmLabel:'Erase and set a new PIN', onYes:()=>{ data={v:1,unit:data.unit||'lb',restDefault:data.restDefault||120,dates:{}}; ensureDefaults(); save();
         buf=''; firstPin=''; lockMode='create'; closeSheet(); renderLock(); } }); }
 });
-applyViewMode(); ensureDefaults(); applyPhase(); state.liftDay=getRot(); render(); initLock(); if(sync.enabled) setSyncDot('ok'); startupSync();
+applyViewMode(); ensureDefaults(); applyPhase(); state.liftDay=getRot(); render();
+if(data.onboarded) initLock(); else startOnboarding(); if(sync.enabled) setSyncDot('ok'); startupSync();
 window.addEventListener('resize', ()=>{ if((data.viewMode||'auto')==='auto') applyViewMode(); });
 /* Offline shell. Only meaningful when served over http(s); opening the file
    directly still works because every asset is already inlined. */

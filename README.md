@@ -19,6 +19,34 @@ your Home Screen — it installs as a standalone app and runs fully offline.
 | `supabase-setup.sql` | One-time setup for the optional cloud sync — creates the table and locks it down with row-level security. |
 | `brand/` | The progress-ring mark, wordmark, app icons, palette and usage rules. See [`brand/README.txt`](brand/README.txt) and open [`brand/physiq-brandsheet.html`](brand/physiq-brandsheet.html). |
 
+## Targets that come from your own data
+
+Physiq records what you ate and what you weighed, every day. That is the pair of
+series needed to measure what you actually burn, so the **Adaptive** target mode
+derives your targets from it rather than from a coefficient:
+
+```
+expenditure = mean intake − (weight change × 3500) / days
+```
+
+The weight term is the least-squares slope of the *smoothed* series, over a
+28-day window, ignoring the day still in progress. Before there is enough
+history it falls back to Mifflin-St Jeor from your profile, then to bodyweight
+alone — and it says which one it is using. The target is expenditure plus
+whatever surplus or deficit the current phase asks for, floored so an aggressive
+cut is a choice rather than a default.
+
+The Progress tab shows the estimate against your intake, so the number is
+inspectable rather than magic.
+
+## Training analysis
+
+- **Per-exercise history** — tap any exercise name for every session you have
+  logged and the trend in estimated 1RM.
+- **Weekly volume by muscle** — completed sets grouped by muscle against common
+  hypertrophy ranges. Mid-week it tells you what is left, not that you are
+  behind.
+
 ## Repeating meals
 
 Eating the same thing two or three times a day is normal, and re-logging it
@@ -30,7 +58,9 @@ carrying its macros and serving note over exactly:
 - **A single item** — the copy button on its row, or from the entry itself.
 - **Into an empty meal** — an empty meal offers to copy an earlier one in.
 
-Every copy comes with an Undo.
+Every copy comes with an Undo. Foods you have not saved yet can be searched by
+name against Open Food Facts, but your own saved list always comes first — the
+long tail is for the exception, not the daily loop.
 
 ## Design system
 
