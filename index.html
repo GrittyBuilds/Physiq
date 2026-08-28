@@ -388,6 +388,34 @@
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:164px}
   .gochip .gk{font-size:var(--fs-cap);color:var(--t3);font-weight:650}
   .gochip .gk::after{content:' kcal'}
+  .measlist{display:flex;flex-direction:column;gap:var(--sp-2)}
+  .measrow{display:flex;align-items:center;gap:var(--sp-3)}
+  .measlab{flex:1 1 auto;min-width:0;font-size:var(--fs-sm);font-weight:650;color:var(--t1);
+    display:flex;flex-direction:column;gap:1px;cursor:pointer}
+  .measlab small{font-size:var(--fs-cap);color:var(--t3);font-weight:500;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .measrow input.measin{flex:0 0 92px;width:92px;min-height:44px;text-align:center;
+    font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:600;
+    font-size:var(--fs-md);background:var(--s2);border:1px solid var(--line-field);
+    border-radius:var(--r-sm);color:var(--t1);padding:9px 6px}
+  .measrow input.measin:focus{outline:none;border-color:var(--accent);background:var(--s3);
+    box-shadow:0 0 0 3px var(--accent-soft)}
+  .measrow .delta{flex:0 0 52px;text-align:right;font-size:var(--fs-xs)}
+  /* The two-slope read. Bordered rather than filled: it is a conclusion, not an
+     alert, and the accent budget on this screen belongs to the weight chart. */
+  .bq{margin-top:var(--sp-4);padding:var(--sp-3);border-radius:var(--r-md);
+    background:var(--s2);border:1px solid var(--line);border-left-width:3px}
+  .bq.good{border-left-color:var(--good)}
+  .bq.warn{border-left-color:var(--warn)}
+  .bq.flat{border-left-color:var(--t4)}
+  .bq-n{display:flex;gap:var(--sp-4);font-weight:700;font-size:var(--fs-md);
+    color:var(--t1);margin-bottom:var(--sp-2);font-variant-numeric:tabular-nums}
+  .bq-t{font-size:var(--fs-sm);color:var(--t2);line-height:var(--lh-base)}
+  @media (max-width:380px){
+    .measrow{gap:var(--sp-2)}
+    .measrow input.measin{flex-basis:80px;width:80px}
+    .measrow .delta{flex-basis:44px}
+  }
   .meallist{display:flex;flex-direction:column;gap:var(--sp-2)}
   .mealrow{display:flex;align-items:center;gap:var(--sp-2)}
   .mealrow .field{min-height:42px}
@@ -1912,7 +1940,7 @@ let SCHEMA_AHEAD = false;   /* stored blob is newer than this build understands 
    (a per-device display preference — a phone should not inherit a desktop's). */
 const SYNC_FIELDS = ['unit','restDefault','deloadWeeks','blockStart','pinHash','lockSkipped',
   'foods','rotationPos','rotationByPhase','phase','phaseTargets','phaseMode','focus',
-  'presetsRemoved','mealsV3','migratedFood','profile','onboarded','logRIR','meals'];
+  'presetsRemoved','mealsV3','migratedFood','profile','onboarded','logRIR','meals','measSites'];
 const SYNC_EXEMPT = ['v','dates','updatedAt','viewMode'];
 function auditSchema(){
   const unknown=Object.keys(data).filter(k=>SYNC_FIELDS.indexOf(k)<0 && SYNC_EXEMPT.indexOf(k)<0);
@@ -3166,6 +3194,127 @@ function updateEdCalc(){ const el=document.getElementById('edcalc'); if(!el) ret
   const p=parseFloat(val('edp'))||0,c=parseFloat(val('edc'))||0,f=parseFloat(val('edf'))||0;
   el.innerHTML=`<b>${Math.round(p*4+c*4+f*9)}</b> kcal total`;
 }
+/* BODY MEASUREMENTS. Stored per day alongside the weigh-in, in inches
+   internally for the same reason weight is stored in pounds — one canonical
+   unit, converted at the edges. Which sites appear is the user's call; three
+   is a form you will actually fill in, eight is one you will not. */
+const MEAS_SITES=[
+  {id:'waist', name:'Waist', hint:'at the navel, relaxed'},
+  {id:'chest', name:'Chest', hint:'at the nipple line, arms down'},
+  {id:'arm',   name:'Arm',   hint:'flexed, at the peak'},
+  {id:'thigh', name:'Thigh', hint:'at the largest point'},
+  {id:'hips',  name:'Hips',  hint:'at the widest point'},
+  {id:'shoulders', name:'Shoulders', hint:'all the way around, widest'},
+  {id:'calf',  name:'Calf',  hint:'at the largest point'},
+  {id:'neck',  name:'Neck',  hint:'just below the larynx'},
+];
+const MEAS_DEFAULT=['waist','chest','arm'];
+function measSites(){
+  const s=data&&data.measSites;
+  const valid=Array.isArray(s)? s.filter(id=>MEAS_SITES.some(m=>m.id===id)) : null;
+  return (valid&&valid.length? valid : MEAS_DEFAULT).map(id=>MEAS_SITES.find(m=>m.id===id));
+}
+function measUnit(){ return data.unit==='kg' ? 'cm' : 'in'; }
+function measToUnit(inches){ return data.unit==='kg' ? inches*2.54 : inches; }
+function measFromUnit(v){ v=parseFloat(v); if(isNaN(v)) return null;
+  return data.unit==='kg' ? v/2.54 : v; }
+function measSeries(id){
+  return Object.keys(data.dates||{}).sort()
+    .filter(k=>{ const m=(data.dates[k]||{}).meas; return m && m[id]!=null; })
+    .map(k=>({k, v:measToUnit(data.dates[k].meas[id])}));
+}
+/* Least-squares slope per day over a series, or null when there is not enough
+   to draw a line through. */
+function seriesSlope(pts, minN, minSpanDays){
+  if(!pts || pts.length<(minN||3)) return null;
+  const t0=new Date(pts[0].k+'T00:00').getTime();
+  const xs=pts.map(p=>(new Date(p.k+'T00:00').getTime()-t0)/86400000);
+  const span=xs[xs.length-1]-xs[0];
+  if(span<(minSpanDays||14)) return null;
+  const n=xs.length, mx=xs.reduce((a,x)=>a+x,0)/n, my=pts.reduce((a,p)=>a+p.v,0)/n;
+  let num=0, den=0;
+  xs.forEach((x,i)=>{ num+=(x-mx)*(pts[i].v-my); den+=(x-mx)*(x-mx); });
+  if(!den) return null;
+  return {slope:num/den, span, n};
+}
+/* THE READ NOBODY ELSE CAN RENDER. A nutrition app has your weight; a training
+   app has your lifts; neither has your waist next to both. Weight moving
+   without the waist moving is the whole question of a bulk, and it is answered
+   with two slopes over the same window. */
+function bulkQuality(){
+  const w=Object.keys(data.dates||{}).filter(k=>data.dates[k].weight!=null).sort()
+    .map(k=>({k, v:toUnitNum(data.dates[k].weight)}));
+  const cutoff=addDays(todayKey(),-56);
+  const ws=seriesSlope(w.filter(p=>p.k>=cutoff), 8, 21);
+  const ms=seriesSlope(measSeries('waist').filter(p=>p.k>=cutoff), 3, 21);
+  if(!ws||!ms) return null;
+  const wPerWk=ws.slope*7, mPerWk=ms.slope*7;
+  const u=data.unit, mu=measUnit();
+  const gain=wPerWk>0.15, loss=wPerWk<-0.15;
+  const waistUp=mPerWk>0.02, waistDown=mPerWk<-0.02;
+  let verdict, tone;
+  if(gain && !waistUp){ verdict='Weight is going on and your waist is not. That is the version of a bulk you want.'; tone='good'; }
+  else if(gain && waistUp){
+    /* Roughly: on a lean gain the waist should move far less than the scale. */
+    const ratio=Math.abs(mPerWk)/Math.abs(wPerWk);
+    verdict = ratio>0.35
+      ? 'Your waist is climbing about as fast as your weight — a good share of this is fat. Pulling calories back toward maintenance would slow it.'
+      : 'Weight and waist are both up, but the waist much more slowly. That is a normal lean gain.';
+    tone = ratio>0.35 ? 'warn' : 'good';
+  }
+  else if(loss && waistDown){ verdict='Weight and waist are both coming down. The loss is coming off where you want it.'; tone='good'; }
+  else if(loss && !waistDown){ verdict='You are losing weight but your waist has not moved. Worth holding calories here and checking your protein before cutting further.'; tone='warn'; }
+  else if(!gain && !loss && waistDown){ verdict='Scale flat, waist down — a recomposition, and the only way you would ever see it is by measuring.'; tone='good'; }
+  else { verdict='Weight and waist are both holding steady.'; tone='flat'; }
+  return {verdict, tone,
+    wTxt:(wPerWk>0?'+':'')+wPerWk.toFixed(2)+' '+u+'/wk',
+    mTxt:(mPerWk>0?'+':'')+mPerWk.toFixed(2)+' '+mu+'/wk',
+    weeks:Math.round(Math.min(ws.span,ms.span)/7)};
+}
+/* "Measured on today" is not a sentence. Today and yesterday take no
+   preposition; a real date does. */
+function measWhen(){
+  const rel=relDayLabel(curKey());
+  return (rel==='Today'||rel==='Yesterday')
+    ? 'Measured '+rel.toLowerCase()+'.'
+    : 'Measured on '+new Date(curKey()+'T00:00').toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})+'.';
+}
+function measCard(){
+  const sites=measSites(), s=dstore(), cur=s.meas||{};
+  const rows=sites.map(m=>{
+    const ser=measSeries(m.id);
+    const last=ser.length? ser[ser.length-1] : null;
+    const prev=ser.length>1? ser[ser.length-2] : null;
+    const d=(last&&prev)? last.v-prev.v : null;
+    const val=cur[m.id]!=null ? measToUnit(cur[m.id]).toFixed(1) : '';
+    return `<div class="measrow">
+      <label class="measlab" for="meas_${m.id}">${m.name}<small>${m.hint}</small></label>
+      <input class="field measin" id="meas_${m.id}" inputmode="decimal" enterkeyhint="done"
+        placeholder="${last? last.v.toFixed(1) : measUnit()}" value="${val}"
+        data-in="measval" data-m="${m.id}" aria-label="${m.name} in ${measUnit()}">
+      ${(d!=null&&Math.abs(d)>=0.05)?`<span class="delta num ${d<0?'down':'up'}">${d>0?'+':''}${d.toFixed(1)}</span>`:'<span class="delta num flat"></span>'}
+    </div>`;
+  }).join('');
+  const bq=bulkQuality();
+  const waist=measSeries('waist');
+  let out=`<div class="card span2"><h2>Measurements<span class="sub">${measUnit()} · <span class="lnk" role="button" tabindex="0" data-act="meassites">choose sites</span></span></h2>
+    <div class="prose" style="margin-bottom:var(--sp-3)">${measWhen()} Same spot, same time of day, before eating — consistency matters more than precision.</div>
+    <div class="measlist">${rows}</div>`;
+  if(bq) out+=`<div class="bq ${bq.tone}"><div class="bq-n"><span class="num">${bq.wTxt}</span><span class="num">${bq.mTxt}</span></div>
+    <div class="bq-t">${bq.verdict}</div>
+    <div class="hint tail">Over the last ${bq.weeks} weeks.</div></div>`;
+  else if(waist.length) out+=`<div class="hint tail">Log your waist a few more times, three weeks apart or more, and Physiq will tell you how much of your weight change is actually muscle.</div>`;
+  if(waist.length>2) out+=chartSVG(waist, movingAvg(waist,3), {id:'ms', color:'var(--t1)', unit:measUnit(), dec:1});
+  return out+`</div>`;
+}
+function measSitesSheet(){
+  const on=measSites().map(m=>m.id);
+  openSheet(`<h3 id="sheetTitle">What to measure</h3>
+    <div class="hint c" style="margin-bottom:var(--sp-4)">Pick the sites you will actually keep up with. Waist is the one that earns its place — it is what tells you whether weight you gained was muscle.</div>
+    <div class="foodchips">${MEAS_SITES.map(m=>{ const sel=on.indexOf(m.id)>=0;
+      return `<button class="foodchip${sel?' on':''}" data-act="toggsite" data-m="${m.id}" aria-pressed="${sel}">${sel?ic('check'):''}${m.name}</button>`; }).join('')}</div>
+    <div class="hint tail" style="margin-top:var(--sp-3)">Turning a site off hides the field — nothing you have already measured is deleted.</div>`);
+}
 function viewBody(){
   const entries=Object.keys(data.dates).filter(k=>data.dates[k].weight!=null).sort();
   const s=dstore();
@@ -3192,6 +3341,8 @@ function viewBody(){
     }).join('')+`</div>`;
   }
   out+=`</div>`;
+
+  out+=measCard();
 
   out+=`<div class="card"><h2>Progress photos</h2>
     <button class="btn ghost" data-act="addphoto">${ic('camera')} Add photo</button>`;
@@ -4295,6 +4446,14 @@ document.addEventListener('click', e=>{
     checkTargets(); }
   else if(a==='storage'){ storageSheet(); }
   else if(a==='meals'){ mealsSheet(); }
+  else if(a==='meassites'){ measSitesSheet(); }
+  else if(a==='toggsite'){ const id=el.dataset.m;
+    const cur=measSites().map(m=>m.id); const i=cur.indexOf(id);
+    if(i>=0){ if(cur.length<2){ showToast('Keep at least one measurement','err'); return; } cur.splice(i,1); }
+    else cur.push(id);
+    /* Store in the canonical site order so the form never shuffles. */
+    data.measSites=MEAS_SITES.filter(m=>cur.indexOf(m.id)>=0).map(m=>m.id);
+    touchSettings(); save(); measSitesSheet(); render(); }
   else if(a==='mealadd'){ const L=mealList().slice();
     const last=L[L.length-1];
     L.push({id:'m'+nowMs().toString(36), name:'New meal', h:Math.min(23,(+last.h||0)+1)});
@@ -4368,6 +4527,11 @@ document.addEventListener('input', e=>{
     scheduleFoodSearch(el.value); return; }
   const s=dstore();
   if(a==='setw'||a==='setr'){ const ex=dec(el.dataset.ex),i=+el.dataset.i; const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{}; arr[i][a==='setw'?'w':'r']=el.value; touch(); save(); }
+  if(a==='measval'){ const id=el.dataset.m; const v=measFromUnit(el.value);
+    const st=dstore(); st.meas=st.meas||{};
+    if(el.value.trim()===''||v==null||!(v>0)) delete st.meas[id]; else st.meas[id]=Math.round(v*100)/100;
+    if(!Object.keys(st.meas).length) delete st.meas;
+    touch(); save(); return; }
   if(a==='mealname'||a==='mealhour'){ const i=+el.dataset.i; const L=mealList().slice();
     if(!L[i]) return;
     if(a==='mealname'){ const v=el.value.trim(); L[i]=Object.assign({},L[i],{name:v||L[i].name}); }
@@ -4491,6 +4655,14 @@ function exportCSV(){
   keys.forEach(k=>{ (data.dates[k].log||[]).forEach(e=>{ const kc=(+e.p||0)*4+(+e.c||0)*4+(+e.f||0)*9; L.push(csvRow([k,e.name||'',e.p||0,e.c||0,e.f||0,kc])); }); });
   L.push(''); L.push('WORKOUT LOG'); L.push(csvRow(['Date','Exercise','Set','Weight','Reps','Done']));
   keys.forEach(k=>{ const sets=data.dates[k].sets||{}; Object.keys(sets).forEach(ex=>{ (sets[ex]||[]).forEach((st,i)=>{ if(st&&(st.w||st.r)) L.push(csvRow([k,ex,i+1,st.w||'',st.r||'',st.done?'Yes':''])); }); }); });
+  const mSites=MEAS_SITES.filter(m=>keys.some(k=>((data.dates[k]||{}).meas||{})[m.id]!=null));
+  if(mSites.length){
+    L.push(''); L.push('MEASUREMENTS ('+measUnit()+')');
+    L.push(csvRow(['Date'].concat(mSites.map(m=>m.name))));
+    keys.forEach(k=>{ const ms=(data.dates[k]||{}).meas; if(!ms) return;
+      if(!mSites.some(m=>ms[m.id]!=null)) return;
+      L.push(csvRow([k].concat(mSites.map(m=>ms[m.id]!=null?trimN(measToUnit(ms[m.id])):'')))); });
+  }
   L.push(''); L.push('PERSONAL RECORDS'); L.push(csvRow(['Exercise','Best','Est 1RM ('+data.unit+')','Date']));
   getPRs().forEach(p=>{ L.push(csvRow([p.ex,p.type==='w'?(trimN(p.w)+' x '+p.r):(p.r+' reps'),p.type==='w'?trimN(Math.round(p.e)):'',p.date])); });
   const blob=new Blob([L.join('\n')],{type:'text/csv'}); const u=URL.createObjectURL(blob); const a=document.createElement('a');
