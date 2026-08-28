@@ -402,6 +402,21 @@
   .recap-pr{display:flex;align-items:center;gap:6px;font-size:var(--fs-xs);
     color:var(--warn);font-weight:650;margin-top:5px}
   .recap-pr .ic{width:14px;height:14px}
+  /* Editor rows: a wide tap target that reads as a thing, with its controls
+     kept small and neutral beside it. */
+  .pgday{display:flex;flex-direction:column;align-items:flex-start;gap:2px;
+    min-width:0;min-height:48px;justify-content:center;padding:8px 12px;
+    background:var(--s2);border:1px solid var(--line);border-radius:var(--r-sm);
+    color:var(--t1);cursor:pointer;text-align:left;
+    transition:background var(--d-2) var(--ease),border-color var(--d-2) var(--ease)}
+  .pgday:hover{background:var(--s3);border-color:var(--line-2)}
+  .pgday .nm{font-size:var(--fs-sm);font-weight:650;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;max-width:100%}
+  .pgday .sub{font-size:var(--fs-cap);color:var(--t3);font-weight:600;
+    font-variant-numeric:tabular-nums}
+  .mealrow .pgday.grow{flex:1 1 auto}
+  .mealrow .rowbtn.danger{color:var(--t3)}
+  .mealrow .rowbtn.danger:hover,.mealrow .rowbtn.danger:focus-visible{color:var(--bad)}
   .measlist{display:flex;flex-direction:column;gap:var(--sp-2)}
   .measrow{display:flex;align-items:center;gap:var(--sp-3)}
   .measlab{flex:1 1 auto;min-width:0;font-size:var(--fs-sm);font-weight:650;color:var(--t1);
@@ -433,6 +448,15 @@
   .meallist{display:flex;flex-direction:column;gap:var(--sp-2)}
   .mealrow{display:flex;align-items:center;gap:var(--sp-2)}
   .mealrow .field{min-height:42px}
+  /* A long free-text value needs the width of the sheet, not the sliver left
+     over beside its label. */
+  .measrow.stack{flex-direction:column;align-items:stretch;gap:var(--sp-2)}
+  .measrow.stack .measlab{flex:none}
+  .measrow.stack .field{width:100%;max-width:none}
+  /* Vertical lists reorder up and down, so the control should say up and down.
+     There is no chevup in the icon set; chevdown turned over is the same mark. */
+  .rowbtn.up .ic{transform:rotate(180deg)}
+  .rowbtn.down .ic{transform:none}
   /* One red icon in a food row reads as "delete this". Six stacked down the
      side of an editor reads as a hazard warning about the whole screen, so
      here the danger colour arrives on intent rather than at rest. */
@@ -1835,7 +1859,7 @@ function sessionStats(k){
       const w=parseFloat(st.w), r=parseInt(st.r,10);
       if(!isNaN(r)&&r>0){ reps+=r; if(!isNaN(w)&&w>0) tonnage+=w*r; }
     });
-    if(any){ exs++; musclesOf(ex).forEach(m=>{ muscles[m]=(muscles[m]||0)+any; }); }
+    if(any){ exs++; musclesOfKey(ex).forEach(m=>{ muscles[m]=(muscles[m]||0)+any; }); }
   });
   if(!sets) return null;
   const dur=(s.sess&&s.sess.s&&s.sess.e)? Math.round((s.sess.e-s.sess.s)/60000) : null;
@@ -1924,16 +1948,21 @@ function sessionSheet(k){
    and deliberately conservative — legs are resolved first so "leg curl" / "leg
    extension" never leak into the arms bucket via the word "curl". */
 function musclesOf(n){ const s=String(n).toLowerCase(); const out=[]; const has=re=>re.test(s);
-  if(has(/squat|leg press|hack|deadlift|romanian|lunge|leg extension|leg curl/)) out.push('legs');
-  if(has(/calf/)) out.push('calves');
-  if(has(/leg raise|crunch|ab wheel|woodchop|captain|rollout|plank/)) out.push('abs');
+  /* Conditioning first, and it short-circuits. "Rowing Machine" and "Assault
+     Bike" are not back work, and letting \brow reach them would quietly add
+     cardio to the weekly pulling volume. */
+  if(has(/treadmill|assault bike|\bbike\b|elliptical|stair ?(climber|master)|jump rope|skipping|sled|farmer|rowing machine|\berg\b|swim|\brun\b|walk/)) return out;
+  if(has(/squat|leg press|hack|deadlift|romanian|lunge|leg extension|leg curl|hip thrust|glute|good morning|back extension|hyperextension|step-up|nordic|abductor|adductor|pull-through|rack pull/)) out.push('legs');
+  if(has(/calf|tibialis/)) out.push('calves');
+  if(has(/leg raise|knee raise|crunch|ab wheel|woodchop|captain|rollout|plank|sit-up|situp|dragon flag|pallof|toes-to-bar|hollow/)) out.push('abs');
   if(out.indexOf('legs')<0){
-    if(has(/lateral raise|shoulder press|overhead press|reverse pec deck|face pull|rear delt/)) out.push('shoulders');
-    if(has(/\bcurl\b|triceps|pushdown|close-grip|preacher|hammer|skull/)) out.push('arms');
-    if(has(/bench|chest press|incline.*press|flat.*press|cable fly|pec deck|\bfly\b|dips/) && !has(/shoulder press|overhead press|reverse pec deck/)) out.push('chest');
+    if(has(/lateral raise|shoulder press|overhead press|reverse pec deck|face pull|rear delt|upright row|front raise|y-raise|arnold|behind-the-neck|\bz press\b|landmine press|push press|delt/)) out.push('shoulders');
+    if(has(/\bcurl\b|triceps|pushdown|close-grip|preacher|hammer|skull|\bjm press\b|tate press|kickback|bench dip|\b21s\b/)) out.push('arms');
+    if(has(/bench|chest press|incline.*press|flat.*press|decline.*press|cable fly|pec deck|\bfly\b|dips|push-?up|guillotine|svend/) && !has(/shoulder press|overhead press|reverse pec deck|bench dip|push press/)) out.push('chest');
     /* Word boundaries matter now that this drives a printed set count: "chin"
-       sits inside "maCHINe", and "row" inside "narrow". */
-    if(has(/\brow|pulldown|pull-up|pullup|\bchin|straight-arm|pullover/)) out.push('back');
+       sits inside "maCHINe", and "row" inside "narrow". Upright rows are a
+       delt movement and are excluded here, not silently counted as pulling. */
+    if(has(/\brow|pulldown|pull-up|pullup|\bchin|straight-arm|pullover|inverted row/) && !has(/upright row/)) out.push('back');
   }
   return out; }
 
@@ -1968,7 +1997,104 @@ function applyFocus(split){
     return nd;
   });
 }
-function curSplit(){ return applyFocus(SPLITS[activePhase().id] || SPLITS.recomp); }
+/* ===================== THE PROGRAM DOCUMENT =====================
+   SPLITS stops being the training model and becomes a seed. `data.program`
+   holds what the user actually trains, and it is LAZY: absent until the first
+   edit or the first muscle tag, so every existing install migrates by doing
+   nothing and keeps inheriting improvements to the presets.
+
+   `cur` is keyed BY PHASE. A single active program would have quietly broken
+   the thing the app does today — switching from Lean Bulk to Cut switches the
+   split as well as the macros — so each phase carries its own, seeded from
+   that phase's preset the first time it is edited.
+
+   A Day and a Slot are byte-identical to what SPLITS already holds, so
+   viewLift, viewProgram, applyFocus and suggestWeight read them unchanged.
+   Multi-week is not a new concept either: a 4-week block of a 5-day split is
+   simply days.length === 20, and getRot/setRot already modulo against it. */
+function newId(p){ return p+nowMs().toString(36)+Math.floor(Math.random()*1296).toString(36); }
+function normName(x){ return String(x||'').replace(/\s+/g,' ').trim(); }
+/* ONE NAME = ONE MOVEMENT, within a day. Every mechanism for letting two
+   movements share a name — occurrence suffixes, base offsets — turned out to
+   corrupt more than it bought, and the analytics merged them regardless
+   because the log is keyed by name. So the collision is resolved at the point
+   a name is entered, once, visibly. */
+function uniqueName(base, taken){
+  const t=(taken instanceof Set)? taken : new Set(taken||[]);
+  if(!t.has(base)) return base;
+  let n=2; while(t.has(base+' ('+n+')')) n++;
+  return base+' ('+n+')';
+}
+function presetDays(phaseId){ return SPLITS[phaseId] || SPLITS.recomp; }
+function clonePreset(phaseId){
+  return presetDays(phaseId).map((d,i)=>({
+    id:'d'+(i+1), tag:d.tag, name:d.name, priority:d.priority||0,
+    blocks:(d.blocks||[]).map(b=>({label:b.label||null, ex:(b.ex||[]).map(e=>Object.assign({},e))}))
+  }));
+}
+function progFor(phaseId){
+  phaseId=phaseId||activePhase().id;
+  const P=data.program; if(!P||!P.progs||!P.cur) return null;
+  const id=P.cur[phaseId];
+  return (id && P.progs[id]) ? P.progs[id] : null;
+}
+function activeProgram(){ return progFor(activePhase().id); }
+/* Materialises the document on first write. Never called from a read path. */
+function ensureProgram(phaseId){
+  phaseId=phaseId||activePhase().id;
+  const P=data.program=data.program||{_u:nowMs(), cur:{}, progs:{}, mus:{}};
+  P.cur=P.cur||{}; P.progs=P.progs||{}; P.mus=P.mus||{};
+  let id=P.cur[phaseId];
+  if(!id || !P.progs[id]){
+    const ph=phaseDefaults(phaseId);
+    id=newId('p');
+    P.progs[id]={id, name:ph.name+' split', src:'preset:'+phaseId, rev:1, wk:1, pos:0,
+                 days:clonePreset(phaseId)};
+    P.cur[phaseId]=id;
+  }
+  return P.progs[id];
+}
+/* The program travels on its own clock, not under the single global
+   `updatedAt` gate — otherwise editing a program on the phone and logging a
+   weigh-in on the laptop makes one of them disappear. */
+function writeProgram(){
+  const P=data.program; if(!P) return;
+  P._u=nowMs();
+  const p=activeProgram(); if(p) p.rev=(p.rev||1)+1;
+  mirrorProgram();
+  touchSettings(); save();
+}
+/* THE DURABLE MIRROR. A build older than the version guards merges whole day
+   records by `_u` and pushes them back verbatim, but drops any top-level key
+   it has never heard of — so `dates` is the one channel a program survives on.
+   Exactly one mirror exists; the dates it is removed from are touched so the
+   deletion wins the merge rather than losing the tie. */
+function mirrorProgram(){
+  const k=todayKey();
+  Object.keys(data.dates||{}).forEach(d=>{
+    if(d!==k && data.dates[d] && data.dates[d].pgm){ delete data.dates[d].pgm; touch(d); }
+  });
+  if(!data.program) return;
+  dstore(k).pgm=JSON.parse(JSON.stringify(data.program));
+  touch(k);
+}
+/* On boot and after every merge: if a mirror is newer than the top-level copy
+   (an old build round-tripped it while this one was away), take it back. */
+function reconcileProgram(){
+  let best=null, bestK=null;
+  Object.keys(data.dates||{}).forEach(k=>{ const m=(data.dates[k]||{}).pgm;
+    if(m && typeof m==='object' && (!best || (m._u||0)>(best._u||0))){ best=m; bestK=k; } });
+  if(best && (!data.program || (best._u||0)>(data.program._u||0))) data.program=best;
+  if(data.program && !bestK) mirrorProgram();
+}
+/* Muscle tags the user can correct. Absent override -> the keyword classifier,
+   so with no overrides every number in the app is bit-identical to before. */
+function musclesOfKey(name){
+  const m=data.program && data.program.mus && data.program.mus[name];
+  if(Array.isArray(m)) return m.slice();
+  return musclesOf(name);
+}
+function curSplit(){ return applyFocus(activeProgram() ? activeProgram().days : presetDays(activePhase().id)); }
 
 /* ---------------- EXERCISE SWAPS ----------------
    When a machine is taken/unavailable, the user can swap an exercise for a similar
@@ -2038,15 +2164,23 @@ function effectiveTarget(id){ const d=phaseDefaults(id), mode=phaseMode(id);
   return {kc:d.kc, p:d.p, c:d.c, f:d.f}; }
 function applyPhase(){ const t=effectiveTarget(activePhase().id); TARGET.kc=t.kc; TARGET.p=t.p; TARGET.c=t.c; TARGET.f=t.f; }
 /* Rotation pointer is per phase, so switching phases keeps each split's place. */
-function getRot(){ const sp=curSplit(), id=activePhase().id; let v=(data&&data.rotationByPhase&&data.rotationByPhase[id]); v=parseInt(v,10); if(isNaN(v)||v<0) v=0; if(v>=sp.length) v=v%sp.length; return v; }
-function setRot(i){ const sp=curSplit(), id=activePhase().id; i=((i%sp.length)+sp.length)%sp.length; (data.rotationByPhase=data.rotationByPhase||{})[id]=i; }
+/* The rotation pointer lives on the program once one exists, and keeps
+   mirroring rotationByPhase so an older build still lands on the right day. */
+function getRot(){ const sp=curSplit(), id=activePhase().id;
+  const p=activeProgram();
+  let v=(p && p.pos!=null) ? p.pos : (data&&data.rotationByPhase&&data.rotationByPhase[id]);
+  v=parseInt(v,10); if(isNaN(v)||v<0) v=0; if(v>=sp.length) v=v%sp.length; return v; }
+function setRot(i){ const sp=curSplit(), id=activePhase().id;
+  i=((i%sp.length)+sp.length)%sp.length;
+  (data.rotationByPhase=data.rotationByPhase||{})[id]=i;
+  const p=activeProgram(); if(p) p.pos=i; }
 const MC = {kc:'var(--accent)', p:'var(--macro-p)', c:'var(--macro-c)', f:'var(--macro-f)'};
 
 /* ---------------- STORAGE (with graceful fallback) ---------------- */
 const KEY='cp_tracker_v1';
 const PREV_KEY = KEY+'_prev';
 /* Declared before `data` is loaded — load() stamps fresh blobs with it. */
-const SCHEMA_V = 2;
+const SCHEMA_V = 3;
 let SCHEMA_AHEAD = false;   /* stored blob is newer than this build understands */
 /* THE SYNC CONTRACT. Every persisted top-level setting that should travel
    between a user's devices is named here, and mergeRemote() reads nothing else.
@@ -2060,8 +2194,12 @@ const SYNC_FIELDS = ['unit','restDefault','deloadWeeks','blockStart','pinHash','
   'foods','rotationPos','rotationByPhase','phase','phaseTargets','phaseMode','focus',
   'presetsRemoved','mealsV3','migratedFood','profile','onboarded','logRIR','meals','measSites'];
 const SYNC_EXEMPT = ['v','dates','updatedAt','viewMode'];
+/* Merged by mergeRemote on their own clock rather than under the single
+   `updatedAt` gate — a program edited on the phone must not be discarded
+   because the laptop logged a weigh-in a minute later. */
+const SYNC_CUSTOM = ['program'];
 function auditSchema(){
-  const unknown=Object.keys(data).filter(k=>SYNC_FIELDS.indexOf(k)<0 && SYNC_EXEMPT.indexOf(k)<0);
+  const unknown=Object.keys(data).filter(k=>SYNC_FIELDS.indexOf(k)<0 && SYNC_EXEMPT.indexOf(k)<0 && SYNC_CUSTOM.indexOf(k)<0);
   if(unknown.length) console.warn('[physiq] persisted key(s) missing from SYNC_FIELDS — these will never sync:', unknown.join(', '));
 }
 let STORAGE_OK=true;
@@ -2160,16 +2298,31 @@ const MIGRATIONS = [
       });
     });
   }},
+  {v:3, name:'every day record has a sets object', up(d){
+    /* An old sync, a hand-edited import, or a partial merge can produce a day
+       with no `sets` key at all, and several readers index it directly. Cheap
+       to normalise once rather than guard in nine places. */
+    Object.keys(d.dates||{}).forEach(k=>{ const day=d.dates[k]; if(!day) return;
+      if(!day.sets || typeof day.sets!=='object' || Array.isArray(day.sets)) day.sets={};
+      if(!Array.isArray(day.log)) day.log=day.log?[].concat(day.log):[];
+    });
+  }},
 ];
 
 /* One tap of insurance. The blob as it stood before any migration touched it,
    kept under its own key so a bad upgrade is recoverable from Settings rather
    than from a backup the user never made. */
+let SNAP_SKIPPED=false;
 function snapshotBlob(from){
   try{
     const raw=localStorage.getItem(KEY); if(!raw) return;
+    /* A snapshot momentarily doubles what this origin is holding. Taking one
+       that does not fit would fail the write and could take the live blob down
+       with it, so past the halfway mark we skip it and say so rather than
+       gambling the data we are trying to protect. */
+    if(raw.length*2 > STORAGE_BUDGET){ SNAP_SKIPPED=true; return; }
     localStorage.setItem(PREV_KEY, JSON.stringify({at:nowMs(), v:from, blob:raw}));
-  }catch(e){ /* out of room — the migration still matters more than the snapshot */ }
+  }catch(e){ SNAP_SKIPPED=true; }
 }
 function prevSnapshot(){
   try{ const r=localStorage.getItem(PREV_KEY); return r? JSON.parse(r) : null; }catch(e){ return null; }
@@ -2186,6 +2339,10 @@ function runMigrations(){
   MIGRATIONS.forEach(m=>{ if(m.v>from && m.v<=SCHEMA_V){ try{ m.up(data); }catch(e){} } });
   data.v=SCHEMA_V;
   persistLocal();
+  /* If that write did not land, the blob on disk is still the old shape while
+     this session believes it migrated. Put the version back so the next boot
+     tries again instead of skipping the chain over data that never changed. */
+  if(!STORAGE_OK) data.v=from;
 }
 let saveTimer=null;
 function save(){
@@ -2858,8 +3015,8 @@ function mealsSheet(){
       <select class="field mealhr" data-in="mealhour" data-i="${i}" aria-label="${esc(m.name)} starts at">
         ${hours.map(h=>`<option value="${h}" ${(+m.h||0)===h?'selected':''}>${hourLabel(h)}</option>`).join('')}
       </select>
-      <button class="rowbtn" data-act="mealup" data-i="${i}" ${i===0?'disabled':''} aria-label="Move ${esc(m.name)} earlier">${ic('chevleft')}</button>
-      <button class="rowbtn" data-act="mealdown" data-i="${i}" ${i===L.length-1?'disabled':''} aria-label="Move ${esc(m.name)} later">${ic('chevright')}</button>
+      <button class="rowbtn up" data-act="mealup" data-i="${i}" ${i===0?'disabled':''} aria-label="Move ${esc(m.name)} earlier">${ic('chevdown')}</button>
+      <button class="rowbtn down" data-act="mealdown" data-i="${i}" ${i===L.length-1?'disabled':''} aria-label="Move ${esc(m.name)} later">${ic('chevdown')}</button>
       <button class="rowbtn danger" data-act="mealdel" data-i="${i}" ${L.length<2?'disabled':''} aria-label="Delete ${esc(m.name)}">${ic('trash')}</button>
     </div>`).join('');
   openSheet(`<h3 id="sheetTitle">Meals</h3>
@@ -3595,6 +3752,161 @@ function viewTrends(){
     ${chartSVG(prot,movingAvg(prot,7),{color:MC.p,unit:'g',dec:0,target:TARGET.p,id:'pr'})}</div>`;
   return out;
 }
+/* ===================== THE PROGRAM EDITOR =====================
+   Everything below writes through ensureProgram()/writeProgram(), so the
+   document materialises on the first edit and never before. Slots are
+   addressed by (day, block, index) rather than by name, which is what makes
+   reordering and duplicate-name handling unambiguous. */
+/* A builder is only as good as the list behind its name field. The presets and
+   swap groups between them know about a hundred movements, which runs out fast
+   once someone is actually writing a program — so these fill in the common gym
+   floor. Names are chosen to be classifiable by musclesOf() where possible;
+   anything it cannot place is taggable now that muscle overrides exist. */
+const EXTRA_EXERCISES=[
+  /* chest */ 'Decline Barbell Press','Decline DB Press','Incline Cable Fly','Low-to-high Cable Fly',
+  'High-to-low Cable Fly','Machine Chest Fly','Smith Bench Press','Push-up','Deficit Push-up',
+  'Guillotine Press','Svend Press',
+  /* back */ 'Pendlay Row','Meadows Row','Seal Row','Chest-Supported Machine Row','Inverted Row',
+  'Wide-grip Lat Pulldown','Reverse-grip Lat Pulldown','Kneeling Cable Pulldown','Rack Pull',
+  'Snatch-grip Deadlift','Trap Bar Deadlift','Chin-up','Weighted Chin-up','Machine Pullover',
+  /* shoulders */ 'Cable Y-Raise','Cable Upright Row','Barbell Upright Row','DB Front Raise',
+  'Plate Front Raise','Cable Rear Delt Fly','Bent-over DB Reverse Fly','Rear Delt Machine',
+  'Machine Lateral Raise','Leaning Cable Lateral Raise','Behind-the-neck Press','Z Press',
+  'Landmine Press','Push Press',
+  /* arms */ 'Spider Curl','Concentration Curl','Bayesian Cable Curl','Reverse Curl','Zottman Curl',
+  'Cable Hammer Curl','Rope Hammer Curl','Machine Preacher Curl','Drag Curl','21s Barbell Curl',
+  'JM Press','Tate Press','Single-arm Cable Pushdown','Reverse-grip Pushdown','Bench Dip',
+  'Machine Triceps Extension','Cable Kickback',
+  /* legs */ 'Front Squat','Safety Bar Squat','Goblet Squat','Belt Squat','Zercher Squat',
+  'Split Squat','Reverse Lunge','Walking Lunge','Step-up','Sissy Squat','Hip Thrust',
+  'Barbell Hip Thrust','Glute Bridge','Cable Pull-through','Good Morning','Back Extension',
+  'Reverse Hyperextension','Adductor Machine','Abductor Machine','Nordic Curl','Glute-Ham Raise',
+  'Single-leg Leg Press','Pendulum Squat','Hack Squat (feet high)',
+  /* calves */ 'Donkey Calf Raise','Single-leg Calf Raise','Tibialis Raise',
+  /* abs */ 'Cable Crunch','Machine Crunch','Decline Sit-up','Hanging Knee Raise','Dragon Flag',
+  'Pallof Press','Side Plank','Weighted Plank','Cable Woodchop','Ab Rollout','Toes-to-bar',
+  /* carries & conditioning */ 'Farmer Carry','Sled Push','Sled Drag','Assault Bike','Rowing Machine',
+  'Stair Climber','Incline Treadmill Walk','Jump Rope'
+];
+function exerciseLibrary(){
+  const set=new Set();
+  EXTRA_EXERCISES.forEach(n=>set.add(n));
+  Object.keys(SPLITS).forEach(p=>SPLITS[p].forEach(d=>(d.blocks||[]).forEach(b=>(b.ex||[]).forEach(e=>set.add(e.n)))));
+  SWAP_GROUPS.forEach(g=>g.alts.forEach(a=>set.add(a)));
+  FOCUS_PARTS.forEach(p=>set.add(p.bonus.n));
+  /* Anything the user has ever logged is part of their library, whether it
+     came from a preset, a swap, or free text typed at the rack. */
+  Object.keys(data.dates||{}).forEach(k=>Object.keys((data.dates[k]||{}).sets||{}).forEach(n=>set.add(n)));
+  const P=data.program;
+  if(P&&P.progs) Object.keys(P.progs).forEach(id=>(P.progs[id].days||[]).forEach(d=>(d.blocks||[]).forEach(b=>(b.ex||[]).forEach(e=>set.add(e.n)))));
+  return Array.from(set).sort((a,b)=>a.localeCompare(b));
+}
+function dayNames(day){
+  const out=[]; (day.blocks||[]).forEach(b=>(b.ex||[]).forEach(e=>out.push(e.n))); return out;
+}
+function slotAt(day,b,x){ const blk=(day.blocks||[])[b]; return blk && blk.ex && blk.ex[x]; }
+function dayNamesExcept(day,b,x){
+  const out=[];
+  (day.blocks||[]).forEach((blk,bi)=>(blk.ex||[]).forEach((e,xi)=>{ if(bi!==b||xi!==x) out.push(e.n); }));
+  return out;
+}
+let _pgJump=null;
+/* Every mutation goes through here: materialise on first write, apply, bump the
+   program's own clock, mirror, persist. Nothing edits data.program directly. */
+function pgEdit(fn){ const p=ensureProgram(); fn(p); writeProgram(); return p; }
+/* A one-field sheet, for the two places a full form would be absurd. */
+let _promptFn=null;
+function promptSheet(title, body, value, onSave){
+  _promptFn=onSave;
+  openSheet(`<h3 id="sheetTitle">${esc(title)}</h3>
+    <div class="hint c" style="margin-bottom:var(--sp-4)">${esc(body)}</div>
+    <input class="field" id="promptv" value="${esc(value||'')}" maxlength="40" aria-label="${esc(title)}">
+    <button class="btn" data-act="promptok">Save</button>`);
+  setTimeout(()=>{ const f=document.getElementById('promptv'); if(f){ f.focus(); f.select(); } },60);
+}
+const TECHNIQUES=[['','None'],['myo','Myo-reps'],['drop','Drop set'],['RP','Rest-pause']];
+
+function programSheet(){
+  const p=ensureProgramForView();
+  const isPreset=!data.program;
+  openSheet(`<h3 id="sheetTitle">Program</h3>
+    <div class="hint c" style="margin-bottom:var(--sp-4)">${isPreset
+      ? 'You are running the built-in '+esc(activePhase().name)+' split. Editing anything makes your own copy — the preset stays where it is.'
+      : 'Your own program. Every phase keeps its own, so switching to a Cut still switches the split.'}</div>
+    <div class="measrow stack" style="margin-bottom:var(--sp-4)">
+      <label class="measlab" for="pgname">Name<small>whatever you call this block</small></label>
+      <input class="field" id="pgname" value="${esc(p.name)}" data-in="pgname" maxlength="40" aria-label="Program name">
+    </div>
+    <div class="sect-title">Days in the cycle</div>
+    <div class="hint lead" style="margin-bottom:var(--sp-3)">${p.days.length} ${p.days.length===1?'day':'days'} — the rotation runs through them in order and starts again. For a multi-week block, duplicate the week and edit what changes.</div>
+    <div class="meallist">${p.days.map((d,i)=>`<div class="mealrow">
+        <button class="pgday grow" data-act="pgeditday" data-d="${i}">
+          <span class="nm">${esc(d.tag||('Day '+(i+1)))}</span>
+          <span class="sub">${dayNames(d).length} exercises${d.priority?' · priority':''}</span></button>
+        <button class="rowbtn up" data-act="pgdayup" data-d="${i}" ${i===0?'disabled':''} aria-label="Move ${esc(d.tag||'day')} earlier">${ic('chevdown')}</button>
+        <button class="rowbtn down" data-act="pgdaydown" data-d="${i}" ${i===p.days.length-1?'disabled':''} aria-label="Move ${esc(d.tag||'day')} later">${ic('chevdown')}</button>
+        <button class="rowbtn danger" data-act="pgdaydel" data-d="${i}" ${p.days.length<2?'disabled':''} aria-label="Delete ${esc(d.tag||'day')}">${ic('trash')}</button>
+      </div>`).join('')}</div>
+    <div class="inline" style="margin-top:var(--sp-3)">
+      <button class="btn ghost grow" data-act="pgdayadd">${ic('plus')} Add a day</button>
+      <button class="btn ghost auto" data-act="pgweekdup" title="Copy every day again, for a multi-week block">${ic('copy')} Duplicate</button>
+    </div>
+    <button class="btn ghost" data-act="pgreset" style="margin-top:var(--sp-3)">${ic('undo')} Reset to the built-in ${esc(activePhase().name)} split</button>`);
+}
+/* Reads may not materialise the document; the sheet is an edit surface, so it
+   does — but only once the user opens it, not on render. */
+function ensureProgramForView(){ return activeProgram() || {name:phaseDefaults(activePhase().id).name+' split', days:presetDays(activePhase().id), rev:0, pos:0}; }
+
+function dayEditSheet(i){
+  const p=activeProgram()||ensureProgramForView();
+  const d=p.days[i]; if(!d) return;
+  const blocks=(d.blocks||[]).map((b,bi)=>{
+    const rows=(b.ex||[]).map((e,x)=>`<div class="mealrow">
+      <button class="pgday grow" data-act="pgeditslot" data-d="${i}" data-b="${bi}" data-x="${x}">
+        <span class="nm">${e.p?'<span class="pdot">●</span> ':''}${esc(e.n)}</span>
+        <span class="sub num">${e.s} × ${esc(e.r)}${e.rir?` · ${esc(e.rir)} RIR`:''}${e.int?` · +${esc(e.int)}`:''}</span></button>
+      <button class="rowbtn up" data-act="pgexup" data-d="${i}" data-b="${bi}" data-x="${x}" ${(bi===0&&x===0)?'disabled':''} aria-label="Move ${esc(e.n)} up">${ic('chevdown')}</button>
+      <button class="rowbtn down" data-act="pgexdown" data-d="${i}" data-b="${bi}" data-x="${x}" ${(bi===d.blocks.length-1&&x===b.ex.length-1)?'disabled':''} aria-label="Move ${esc(e.n)} down">${ic('chevdown')}</button>
+      <button class="rowbtn danger" data-act="pgexdel" data-d="${i}" data-b="${bi}" data-x="${x}" aria-label="Remove ${esc(e.n)}">${ic('trash')}</button>
+    </div>`).join('');
+    return `${b.label?`<div class="sect-title">${esc(b.label)} <span class="lnk" role="button" tabindex="0" data-act="pgblocklabel" data-d="${i}" data-b="${bi}">rename</span></div>`:(bi>0?`<div class="sect-title">Block ${bi+1}</div>`:'')}
+      <div class="meallist">${rows||'<div class="empty">Nothing in this block yet.</div>'}</div>`;
+  }).join('');
+  openSheet(`<h3 id="sheetTitle">${esc(d.tag||('Day '+(i+1)))}</h3>
+    <div class="measrow"><label class="measlab" for="pgdtag">Short name<small>shows on the day chips</small></label>
+      <input class="field measin" id="pgdtag" value="${esc(d.tag||'')}" data-in="pgdtag" data-d="${i}" maxlength="16" aria-label="Short day name"></div>
+    <div class="measrow stack" style="margin-top:var(--sp-3)"><label class="measlab" for="pgdname">Full name<small>shows as the workout heading</small></label>
+      <input class="field" id="pgdname" value="${esc(d.name||'')}" data-in="pgdname" data-d="${i}" maxlength="60" aria-label="Full day name"></div>
+    <div class="qlrow" style="margin-top:var(--sp-3)"><div class="t-nm grow">Priority day<small>marked as a bring-up on Today</small></div>
+      <button class="switch ${d.priority?'on':''}" data-act="pgdpri" data-d="${i}" role="switch" aria-checked="${d.priority?'true':'false'}" aria-label="Priority day"></button></div>
+    ${blocks}
+    <div class="inline" style="margin-top:var(--sp-3)">
+      <button class="btn ghost grow" data-act="pgexadd" data-d="${i}" data-b="${Math.max(0,(d.blocks||[]).length-1)}">${ic('plus')} Add exercise</button>
+      <button class="btn ghost auto" data-act="pgblockadd" data-d="${i}">${ic('plus')} Block</button>
+    </div>
+    <button class="btn" data-act="pgback">${ic('chevleft')} Back to the program</button>`);
+}
+
+function slotEditSheet(i,b,x){
+  const p=activeProgram()||ensureProgramForView();
+  const d=p.days[i]; const e=slotAt(d,b,x); if(!e) return;
+  openSheet(`<h3 id="sheetTitle">${esc(e.n)}</h3>
+    <div class="measrow stack"><label class="measlab" for="slname">Exercise<small>the name your log is keyed by</small></label>
+      <input class="field" id="slname" value="${esc(e.n)}" data-in="slname" data-d="${i}" data-b="${b}" data-x="${x}" maxlength="48" aria-label="Exercise name" list="exlib"></div>
+    <datalist id="exlib">${exerciseLibrary().map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist>
+    <div class="measrow" style="margin-top:var(--sp-2)"><label class="measlab" for="slsets">Working sets<small>a floor, not a cap — you can add more on the day</small></label>
+      <input class="field measin" id="slsets" inputmode="numeric" value="${e.s}" data-in="slsets" data-d="${i}" data-b="${b}" data-x="${x}" aria-label="Sets"></div>
+    <div class="measrow" style="margin-top:var(--sp-2)"><label class="measlab" for="slreps">Rep range<small>e.g. 8–10</small></label>
+      <input class="field measin" id="slreps" value="${esc(e.r||'')}" data-in="slreps" data-d="${i}" data-b="${b}" data-x="${x}" aria-label="Rep range"></div>
+    <div class="measrow" style="margin-top:var(--sp-2)"><label class="measlab" for="slrir">Target RIR<small>e.g. 1–2, or blank</small></label>
+      <input class="field measin" id="slrir" value="${esc(e.rir||'')}" data-in="slrir" data-d="${i}" data-b="${b}" data-x="${x}" aria-label="Target RIR"></div>
+    <div class="sect-title">Technique on the last set</div>
+    <div class="seg sm" role="group" aria-label="Intensity technique">${TECHNIQUES.map(([v,l])=>
+      `<button class="${(e.int||'')===v?'on':''}" data-act="pgint" data-d="${i}" data-b="${b}" data-x="${x}" data-v="${v}" aria-pressed="${(e.int||'')===v}">${l}</button>`).join('')}</div>
+    <div class="qlrow" style="margin-top:var(--sp-3)"><div class="t-nm grow">Priority movement<small>a bring-up — marked with a dot</small></div>
+      <button class="switch ${e.p?'on':''}" data-act="pgslotpri" data-d="${i}" data-b="${b}" data-x="${x}" role="switch" aria-checked="${e.p?'true':'false'}" aria-label="Priority movement"></button></div>
+    <button class="btn" data-act="pgeditday" data-d="${i}">${ic('chevleft')} Back to the day</button>`);
+}
 function viewProgram(){
   const ph=activePhase();
   const chips=PHASES.map(p=>`<button class="chip ${p.id===ph.id?'on':''}" data-act="setphase" data-p="${p.id}" aria-pressed="${p.id===ph.id}">${p.name}</button>`).join('');
@@ -3616,8 +3928,12 @@ function viewProgram(){
   if(foc.length) out+=`<div class="hint tail">Emphasizing <b>${FOCUS_PARTS.filter(p=>foc.indexOf(p.id)>=0).map(p=>p.name).join(' & ')}</b> · <span data-act="clearfocus" class="lnk" role="button" tabindex="0">clear</span></div>`;
   out+=`</div>`;
   const split=curSplit();
-  out+=`<div class="sect-title">Training split · ${split.length}-day${foc.length?' · focus-tuned':''}</div>`;
-  split.forEach((d,i)=>{ out+=`<div class="ex ${d.priority?'pri':''}"><div class="ex-h"><div class="grow"><div class="nm">Day ${i+1} · ${esc(d.name)}</div>
+  const own=!!activeProgram();
+  out+=`<div class="sect-title">${own?esc(activeProgram().name):'Training split'} · ${split.length}-day${foc.length?' · focus-tuned':''}
+    <span class="lnk" role="button" tabindex="0" data-act="pgopen">edit</span></div>`;
+  if(!own) out+=`<div class="hint lead" style="margin:0 var(--sp-1) var(--sp-3)">This is the built-in ${esc(ph.name)} split. Edit anything and it becomes your own copy — days, exercises, sets, reps, rep ranges and techniques are all yours to change.</div>`;
+  split.forEach((d,i)=>{ out+=`<div class="ex ${d.priority?'pri':''}"><div class="ex-h"><div class="grow">
+    <button class="nm" data-act="pgeditday" data-d="${i}" aria-label="Edit Day ${i+1}, ${esc(d.name)}">Day ${i+1} · ${esc(d.name)}</button>
     <div class="tg">${d.blocks.reduce((a,b)=>a+b.ex.length,0)} exercises</div></div>${d.priority?'<span class="pill">Priority</span>':''}</div>
     <div class="sets">`+ d.blocks.map(b=>(b.label?`<div class="sect-title" style="margin:var(--sp-2) var(--sp-1) 0">${esc(b.label)}</div>`:'')+ b.ex.map(e=>`<div class="setrow between"><span style="font-weight:600;font-size:var(--fs-sm)">${e.p?'<span class="pdot">●</span> ':''}${esc(e.n)}${e.foc?' <span class="foc-badge">focus</span>':''}</span><span class="hint nowrap num">${e.s} × ${e.r}${e.rir?` · ${e.rir} RIR`:''}${e.int?` +${e.int}`:''}</span></div>`).join('')).join('') +`</div></div>`; });
   return out;
@@ -3789,7 +4105,7 @@ function weeklyVolume(keys){
       const done=(sets[ex]||[]).filter(countsAsWork).length;
       if(!done) return;
       total+=done;                       /* each set counted once, whatever it trains */
-      const ms=musclesOf(ex);
+      const ms=musclesOfKey(ex);
       if(!ms.length){ unmatched+=done; return; }
       ms.forEach(m=>{ if(counts[m]!=null) counts[m]+=done; });
     });
@@ -4355,7 +4671,22 @@ async function supPush(){ if(!sync.userId) return;
    blob nor overwrite it with its own shorter one. */
 let _aheadTold=false;
 function mergeRemote(remote){ if(!remote||typeof remote!=='object') return false;
-  if(parseInt(remote.v,10)>SCHEMA_V){
+  const rv=parseInt(remote.v,10);
+  /* The mirror image of the guard below: a build OLDER than this one has no
+     idea the newer top-level keys exist, so its settings half would silently
+     delete them. Take its days — those are additive and merged per record —
+     and leave the settings alone, then push so it catches up. */
+  if(rv>=1 && rv<SCHEMA_V){
+    const rd=remote.dates||{}, ld=data.dates||{}, out={};
+    new Set([...Object.keys(ld),...Object.keys(rd)]).forEach(k=>{ const a=ld[k], b=rd[k];
+      let pick; if(a&&b){ pick=((b._u||0)>(a._u||0))?Object.assign({},b):Object.assign({},a); } else pick=Object.assign({}, a||b);
+      if(a&&a.photos) pick.photos=a.photos; out[k]=pick; });
+    data.dates=out;
+    touchSettings();          /* make ours the newer settings clock, then push */
+    reconcileProgram();       /* the old build may have round-tripped the mirror */
+    return true;
+  }
+  if(rv>SCHEMA_V){
     SCHEMA_AHEAD=true; setSyncDot('err');
     if(!_aheadTold){ _aheadTold=true;
       showToast('Sync paused — another device is running a newer version of Physiq. Update this one to continue.','err'); }
@@ -4367,6 +4698,12 @@ function mergeRemote(remote){ if(!remote||typeof remote!=='object') return false
     if(a&&a.photos) pick.photos=a.photos; out[k]=pick; });
   data.dates=out;
   if((remote.updatedAt||0)>(data.updatedAt||0)){ SYNC_FIELDS.forEach(f=>{ if(remote[f]!==undefined) data[f]=remote[f]; }); data.updatedAt=remote.updatedAt; }
+  /* Own clock, decided independently of the settings gate above. */
+  const rp=remote.program;
+  if(rp && typeof rp==='object' && rp.progs){
+    if(!data.program || (rp._u||0)>(data.program._u||0)) data.program=rp;
+  }
+  reconcileProgram();
   return true;
 }
 let pushTimer=null;
@@ -4624,6 +4961,80 @@ document.addEventListener('click', e=>{
     checkTargets(); }
   else if(a==='storage'){ storageSheet(); }
   else if(a==='meals'){ mealsSheet(); }
+  /* ---- program editor ---- */
+  else if(a==='promptok'){ const fn=_promptFn; _promptFn=null; const v=val('promptv'); if(fn) fn(v); }
+  else if(a==='pgopen'){ programSheet(); }
+  else if(a==='pgback'){ programSheet(); }
+  else if(a==='pgeditday'){ dayEditSheet(+el.dataset.d); }
+  else if(a==='pgeditslot'){ slotEditSheet(+el.dataset.d,+el.dataset.b,+el.dataset.x); }
+  else if(a==='pgdayup'||a==='pgdaydown'){ const i=+el.dataset.d, j=a==='pgdayup'?i-1:i+1;
+    pgEdit(p=>{ if(j<0||j>=p.days.length) return; const t=p.days[i]; p.days[i]=p.days[j]; p.days[j]=t; });
+    programSheet(); render(); }
+  else if(a==='pgdaydel'){ const i=+el.dataset.d;
+    const p0=activeProgram()||ensureProgramForView(); const d=p0.days[i]; if(!d||p0.days.length<2) return;
+    confirmSheet({title:'Delete '+(d.tag||('Day '+(i+1)))+'?',
+      body:'The day comes out of the rotation. Nothing you have already logged is touched — your history is keyed by exercise, not by which day it was.',
+      confirmLabel:'Delete day', onYes:()=>{ pgEdit(p=>{ p.days.splice(i,1); if(p.pos>=p.days.length) p.pos=0; });
+        programSheet(); render(); } }); }
+  else if(a==='pgdayadd'){ pgEdit(p=>{ p.days.push({id:newId('d'), tag:'New day', name:'New day', priority:0,
+      blocks:[{label:null, ex:[]}]}); });
+    dayEditSheet((activeProgram().days.length)-1); render(); }
+  else if(a==='pgweekdup'){ const p0=activeProgram()||ensureProgramForView();
+    confirmSheet({title:'Duplicate the cycle?',
+      body:'Copies all '+p0.days.length+' days again, giving you '+(p0.days.length*2)+'. That is how a multi-week block works here — duplicate, then change what differs in week two.',
+      confirmLabel:'Duplicate', onYes:()=>{ pgEdit(p=>{
+        const copy=JSON.parse(JSON.stringify(p.days)).map(d=>Object.assign(d,{id:newId('d')}));
+        p.days=p.days.concat(copy); p.wk=(p.wk||1)+1; });
+        programSheet(); render(); } }); }
+  else if(a==='pgreset'){ const ph=activePhase();
+    confirmSheet({title:'Reset to the built-in split?',
+      body:'Your edits to the '+ph.name+' program are discarded and the built-in split comes back. Logged workouts are not affected.',
+      confirmLabel:'Reset program', onYes:()=>{
+        const P=data.program;
+        if(P&&P.cur&&P.cur[ph.id]){ delete P.progs[P.cur[ph.id]]; delete P.cur[ph.id];
+          if(!Object.keys(P.cur).length && !Object.keys(P.mus||{}).length) delete data.program;
+          else writeProgram(); }
+        touchSettings(); save(); mirrorProgram(); programSheet(); render(); } }); }
+  else if(a==='pgdpri'){ const i=+el.dataset.d;
+    pgEdit(p=>{ p.days[i].priority=p.days[i].priority?0:1; }); dayEditSheet(i); render(); }
+  else if(a==='pgslotpri'){ const i=+el.dataset.d,b=+el.dataset.b,x=+el.dataset.x;
+    pgEdit(p=>{ const e=slotAt(p.days[i],b,x); if(e){ if(e.p) delete e.p; else e.p=1; } });
+    slotEditSheet(i,b,x); render(); }
+  else if(a==='pgint'){ const i=+el.dataset.d,b=+el.dataset.b,x=+el.dataset.x,v=el.dataset.v;
+    pgEdit(p=>{ const e=slotAt(p.days[i],b,x); if(e){ if(v) e.int=v; else delete e.int; } });
+    slotEditSheet(i,b,x); render(); }
+  else if(a==='pgexup'||a==='pgexdown'){ const i=+el.dataset.d,b=+el.dataset.b,x=+el.dataset.x;
+    pgEdit(p=>{ const d=p.days[i], blks=d.blocks;
+      const ex=blks[b].ex;
+      if(a==='pgexup'){
+        if(x>0){ const t=ex[x]; ex[x]=ex[x-1]; ex[x-1]=t; }
+        else if(b>0){ blks[b-1].ex.push(ex.splice(x,1)[0]); }
+      } else {
+        if(x<ex.length-1){ const t=ex[x]; ex[x]=ex[x+1]; ex[x+1]=t; }
+        else if(b<blks.length-1){ blks[b+1].ex.unshift(ex.splice(x,1)[0]); }
+      }
+    });
+    dayEditSheet(i); render(); }
+  else if(a==='pgexdel'){ const i=+el.dataset.d,b=+el.dataset.b,x=+el.dataset.x;
+    pgEdit(p=>{ const blk=p.days[i].blocks[b]; if(blk) blk.ex.splice(x,1); });
+    dayEditSheet(i); render(); }
+  else if(a==='pgexadd'){ const i=+el.dataset.d, b=+el.dataset.b;
+    pgEdit(p=>{ const d=p.days[i];
+      if(!d.blocks||!d.blocks.length) d.blocks=[{label:null,ex:[]}];
+      const bi=Math.min(b, d.blocks.length-1);
+      const nm=uniqueName('New exercise', dayNames(d));
+      d.blocks[bi].ex.push({n:nm, s:3, r:'8–10', rir:'1–2'});
+      _pgJump={d:i, b:bi, x:d.blocks[bi].ex.length-1};
+    });
+    if(_pgJump){ slotEditSheet(_pgJump.d,_pgJump.b,_pgJump.x); _pgJump=null; }
+    render(); }
+  else if(a==='pgblockadd'){ const i=+el.dataset.d;
+    pgEdit(p=>{ (p.days[i].blocks=p.days[i].blocks||[]).push({label:'Finisher', ex:[]}); });
+    dayEditSheet(i); render(); }
+  else if(a==='pgblocklabel'){ const i=+el.dataset.d,b=+el.dataset.b;
+    const cur=(activeProgram().days[i].blocks[b].label)||'';
+    promptSheet('Block name', 'Group a few movements under a heading — "Calves", "Core finisher".', cur, v=>{
+      pgEdit(p=>{ p.days[i].blocks[b].label=normName(v)||null; }); dayEditSheet(i); render(); }); }
   else if(a==='meassites'){ measSitesSheet(); }
   else if(a==='sessrecap'){ sessionSheet(el.dataset.k); }
   else if(a==='toggsite'){ const id=el.dataset.m;
@@ -4706,6 +5117,24 @@ document.addEventListener('input', e=>{
     scheduleFoodSearch(el.value); return; }
   const s=dstore();
   if(a==='setw'||a==='setr'){ markSessionStart(); const ex=dec(el.dataset.ex),i=+el.dataset.i; const arr=s.sets[ex]||(s.sets[ex]=[]); arr[i]=arr[i]||{}; arr[i][a==='setw'?'w':'r']=el.value; touch(); save(); }
+  if(a==='pgname'){ const v=normName(el.value); if(v) pgEdit(p=>{ p.name=v; }); return; }
+  if(a==='pgdtag'||a==='pgdname'){ const i=+el.dataset.d; const v=normName(el.value);
+    pgEdit(p=>{ const d=p.days[i]; if(!d) return;
+      if(a==='pgdtag') d.tag=v||d.tag; else d.name=v||d.name; });
+    render(); return; }
+  if(a==='slname'||a==='slsets'||a==='slreps'||a==='slrir'){
+    const i=+el.dataset.d,b=+el.dataset.b,x=+el.dataset.x;
+    pgEdit(p=>{ const d=p.days[i]; const e=slotAt(d,b,x); if(!e) return;
+      if(a==='slname'){ const v=normName(el.value); if(!v) return;
+        /* One name is one movement within a day, so a collision is resolved
+           here, once, rather than by every reader forever after. */
+        e.n=uniqueName(v, dayNamesExcept(d,b,x));
+      }
+      else if(a==='slsets'){ const n=parseInt(el.value,10); e.s=Math.max(1,Math.min(12,isNaN(n)?1:n)); }
+      else if(a==='slreps'){ e.r=normName(el.value)||e.r; }
+      else { const v=normName(el.value); if(v) e.rir=v; else delete e.rir; }
+    });
+    render(); return; }
   if(a==='measval'){ const id=el.dataset.m; const v=measFromUnit(el.value);
     const st=dstore(); st.meas=st.meas||{};
     if(el.value.trim()===''||v==null||!(v>0)) delete st.meas[id]; else st.meas[id]=Math.round(v*100)/100;
@@ -4856,7 +5285,7 @@ document.getElementById('lockLink').addEventListener('click', ()=>{
       confirmLabel:'Erase and set a new PIN', onYes:()=>{ data={v:SCHEMA_V,unit:data.unit||'lb',restDefault:data.restDefault||120,dates:{}}; ensureDefaults(); save();
         buf=''; firstPin=''; lockMode='create'; closeSheet(); renderLock(); } }); }
 });
-applyViewMode(); runMigrations(); ensureDefaults(); auditSchema(); applyPhase(); state.liftDay=getRot(); render();
+applyViewMode(); runMigrations(); ensureDefaults(); reconcileProgram(); auditSchema(); applyPhase(); state.liftDay=getRot(); render();
 if(data.onboarded) initLock(); else startOnboarding(); if(sync.enabled) setSyncDot('ok'); startupSync();
 window.addEventListener('resize', ()=>{ if((data.viewMode||'auto')==='auto') applyViewMode(); });
 /* Offline shell. Only meaningful when served over http(s); opening the file
