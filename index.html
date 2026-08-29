@@ -2427,7 +2427,7 @@ function persistLocal(){ try{ const s=JSON.stringify(data); localStorage.setItem
 function touch(k){ k=k||curKey(); const s=dstore(k); s._u=nowMs(); }
 function touchSettings(){ data.updatedAt=nowMs(); }
 /* ---------------- STATE ---------------- */
-const state = { tab:'today', liftDay: 0, statsView:'week', day: todayKey(), fuelEnergy:'remaining', fuelMeal:null, sheetMeal:null, planned:null, foodQuery:'', foodCtx:'log' };
+const state = { tab:'today', liftDay: 0, statsView:'week', day: todayKey(), fuelEnergy:'remaining', fuelMeal:null, sheetMeal:null, planned:null, copyDest:null, foodQuery:'', foodCtx:'log' };
 /* Currently-viewed day (defaults to today). Day-scoped views/edits operate on this. */
 function curKey(){ return state.day||todayKey(); }
 function isToday(){ return curKey()===todayKey(); }
@@ -3420,6 +3420,7 @@ function viewFuel(){
   let out=fuelSummary(t);
   out+=goToStrip(state.fuelMeal||defaultMeal());
   out+=`<button class="btn" data-act="addfood">${ic('plus')} Add food</button>`;
+  out+=`<button class="btn ghost" data-act="copydaycard">${ic('copy')} Copy a day</button>`;
   out+=`<div class="mealgrid">`;
   const buckets={}; mealList().forEach(m=>buckets[m.id]=[]);
   log.forEach((e,i)=>{ buckets[mealOf(e)].push({e,i}); });
@@ -3804,16 +3805,56 @@ function editLogSheet(i){ const s=dstore(); const e=(s.log||[])[i]; if(!e) retur
    Eating the same meal two or three times a day is the norm, and re-logging it
    means re-entering the amount. Copying carries the entry over exactly, and any
    number of destinations can be picked at once. */
-function copyItems(src){
-  const log=dstore().log||[];
+function copyItems(src, k){
+  const log=((data.dates[k||curKey()])||{}).log||[];
+  if(src && src.all) return log.map((e,i)=>({e,i}));
   if(src && src.meal!=null) return log.map((e,i)=>({e,i})).filter(x=>mealOf(x.e)===src.meal);
   if(src && src.i!=null && log[src.i]) return [{e:log[src.i], i:src.i}];
   return [];
+}
+/* Days with something logged, newest first — the picker for "repeat a day",
+   where seeing the calories is how you recognise the one you want. */
+function loggedDays(limit, not){
+  const out=[]; const end=todayKey();
+  for(let i=0; i<COPY_LOOKBACK && out.length<(limit||12); i++){
+    const k=addDays(end,-i);
+    if(k===not) continue;
+    const log=((data.dates[k])||{}).log||[];
+    if(!log.length) continue;
+    out.push({k, n:log.length, kc:log.reduce((a,e)=>a+entryKc(e),0)});
+  }
+  return out;
+}
+const COPY_LOOKBACK=120;
+/* "today" and "yesterday" read naturally mid-sentence; a real date does not.
+   "Copy to thu, aug 27" is not how anyone writes a date. */
+function dayPhrase(k){
+  const rel=relDayLabel(k);
+  return (rel==='Today'||rel==='Yesterday') ? rel.toLowerCase() : rel;
+}
+/* Destination dates offered as one tap. Future days are deliberately absent:
+   the rest of the app cannot navigate past today, so a copy landing there
+   would be invisible. */
+function copyDateChips(sel, act){
+  const tk=todayKey(), here=curKey();
+  /* The day you are on, then today, then the days just before it. Today has to
+     be in the list explicitly: while viewing yesterday it is neither `here` nor
+     one of the days before `here`, and "I ate that again today" is the single
+     most likely reason anyone opens this. */
+  const keys=[here];
+  if(tk!==here) keys.push(tk);
+  for(let n=1; keys.length<5 && n<=6; n++){ const k=addDays(tk,-n); if(keys.indexOf(k)<0) keys.push(k); }
+  const opts=keys.map(k=>[k, k===here ? (k===tk?'This day':relDayLabel(k)+' · here') : relDayLabel(k)]);
+  return `<div class="foodchips" role="group" aria-label="Destination day">${
+    opts.map(([k,lab])=>`<button class="foodchip${k===sel?' on':''}" data-act="${act}" data-k="${k}" aria-pressed="${k===sel?'true':'false'}">${k===sel?ic('check'):''}${esc(lab)}</button>`).join('')
+  }<button class="foodchip" data-act="${act}pick" aria-label="Pick another date">${ic('calendar')}Another date</button></div>
+  <input type="date" id="copyDate" max="${tk}" value="${sel}" tabindex="-1" aria-hidden="true" style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px">`;
 }
 function copySheet(src){
   const items=copyItems(src);
   if(!items.length){ showToast('Nothing to copy','err'); return; }
   state.copySrc=src;
+  state.copyDest=state.copyDest||curKey();
   const from = src.meal!=null ? src.meal : mealOf(items[0].e);
   const kc = items.reduce((a,x)=>a+entryKc(x.e),0);
   const title = src.meal!=null ? mealName(src.meal) : items[0].e.name;
@@ -3822,11 +3863,52 @@ function copySheet(src){
     : `${items[0].e.p}P · ${items[0].e.c}C · ${items[0].e.f}F · ${kc.toLocaleString()} kcal${items[0].e.det?' · '+esc(items[0].e.det):''}`;
   openSheet(`<h3 id="sheetTitle">Copy ${esc(title)}</h3>
     <div class="hint c" style="margin-bottom:var(--sp-4)">${summary}</div>
-    <div class="sect-title" style="margin-top:0">Copy to</div>
+    <div class="sect-title" style="margin-top:0">Which day</div>
+    ${copyDateChips(state.copyDest, 'copyday')}
+    <div class="sect-title">Which meal</div>
     <div class="foodchips" role="group" aria-label="Destination meals" style="margin-bottom:var(--sp-4)">${
-      mealList().map(m=>`<button class="foodchip" data-act="copypick" data-m="${m.id}" aria-pressed="false">${esc(m.name)}${m.id===from?' again':''}</button>`).join('')}</div>
+      mealList().map(m=>`<button class="foodchip" data-act="copypick" data-m="${m.id}" aria-pressed="false">${esc(m.name)}${(m.id===from&&state.copyDest===curKey())?' again':''}</button>`).join('')}</div>
     <button class="btn green" data-act="copydo" disabled>${ic('copy')} Copy</button>
     <div class="hint c" id="copyHint" style="margin-top:var(--sp-2)">Pick one or more meals.</div>`);
+}
+/* Whole days, both directions — the two ways anyone actually asks for this:
+   "I ate the same as Tuesday" and "I forgot to log yesterday". */
+function dayCopySheet(){
+  const here=curKey();
+  const mine=((data.dates[here])||{}).log||[];
+  const src=loggedDays(12, here);
+  openSheet(`<h3 id="sheetTitle">Copy a day</h3>
+    <div class="hint c" style="margin-bottom:var(--sp-4)">Everything moves across with its meal, its macros and its serving note.</div>
+    ${mine.length?`<div class="sect-title" style="margin-top:0">Copy ${esc(dayPhrase(here))} to another day</div>
+      <button class="menurow" data-act="dayout">${ic('copy')}
+        <span class="mr-t">${esc(relDayLabel(here))}<small>${mine.length} item${mine.length===1?'':'s'} · ${mine.reduce((a,e)=>a+entryKc(e),0).toLocaleString()} kcal</small></span>
+        <span class="chev">${ic('chevright')}</span></button>`:''}
+    <div class="sect-title">Copy a day into ${esc(dayPhrase(here))}</div>
+    ${src.length
+      ? `<div class="menulist">${src.map(d=>`
+          <button class="menurow" data-act="dayin" data-k="${d.k}">${ic('copy')}
+            <span class="mr-t">${esc(relDayLabel(d.k))}<small>${new Date(d.k+'T00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})} · ${d.n} item${d.n===1?'':'s'} · ${d.kc.toLocaleString()} kcal</small></span>
+            <span class="chev">${ic('chevright')}</span></button>`).join('')}</div>`
+      : `<div class="empty">${ic('plate')}No other day has anything logged yet.</div>`}`);
+}
+/* Choosing where THIS day's log should land. */
+function dayOutSheet(){
+  const here=curKey();
+  if(!state.copyDest || state.copyDest===here){
+    /* Default to the nearest day that is not the one being copied. */
+    let d=addDays(todayKey(),-1);
+    if(d===here) d=addDays(todayKey(),-2);
+    state.copyDest=d;
+  }
+  const mine=((data.dates[here])||{}).log||[];
+  const dest=((data.dates[state.copyDest])||{}).log||[];
+  openSheet(`<h3 id="sheetTitle">Copy ${esc(dayPhrase(here))} to…</h3>
+    <div class="hint c" style="margin-bottom:var(--sp-4)">${mine.length} item${mine.length===1?'':'s'} · ${mine.reduce((a,e)=>a+entryKc(e),0).toLocaleString()} kcal</div>
+    ${copyDateChips(state.copyDest, 'dayoutpick')}
+    <div class="hint lead" id="dayOutNote" style="margin-top:var(--sp-3)">${dest.length
+      ? `<b>${esc(relDayLabel(state.copyDest))}</b> already has ${dest.length} item${dest.length===1?'':'s'} — these are added to them, nothing is replaced.`
+      : `<b>${esc(relDayLabel(state.copyDest))}</b> has nothing logged.`}</div>
+    <button class="btn green" data-act="dayoutdo">${ic('copy')} Copy to ${esc(dayPhrase(state.copyDest))}</button>`);
 }
 /* The mirror image, offered from an empty meal: pull an earlier meal into it. */
 function copyIntoSheet(dest){
@@ -3844,17 +3926,28 @@ function copyIntoSheet(dest){
 }
 /* One place where a copy actually happens, so undo is identical whichever
    entry point you came from. */
-function doCopy(items, dests){
-  if(!items.length || !dests.length) return;
-  const k=curKey(); const s=dstore(k); s.log=s.log||[];
+/* One place where a copy actually happens, so undo is identical whichever entry
+   point you came from. `dests` empty means "keep each item's own meal", which is
+   what copying a whole day across needs. `destKey` may be any date. */
+function doCopy(items, dests, destKey){
+  if(!items.length) return;
+  const k=destKey||curKey(); const s=dstore(k); s.log=s.log||[];
   const added=[];
-  dests.forEach(m=>items.forEach(({e})=>{
-    const c=Object.assign({},e,{meal:m}); s.log.push(c); added.push(c);
-  }));
-  touch(k); save(); closeSheet(); render(); checkTargets();
-  const where = dests.length===1 ? mealName(dests[0]) : dests.length+' meals';
+  const push=c=>{ s.log.push(c); added.push(c); };
+  if(dests && dests.length) dests.forEach(m=>items.forEach(({e})=>push(Object.assign({},e,{meal:m}))));
+  else items.forEach(({e})=>push(Object.assign({},e,{meal:mealOf(e)})));
+  touch(k); save(); closeSheet(); render(); if(k===curKey()) checkTargets();
+  /* Name the meal when meals were chosen, the day when a whole day moved — and
+     never both, which read as "to thu, aug 27 on thu, aug 27". */
+  let where;
+  if(dests && dests.length){
+    where = (dests.length===1 ? mealName(dests[0]) : dests.length+' meals')
+          + (k!==curKey() ? ' on '+dayPhrase(k) : '');
+  } else where = dayPhrase(k);
   offerUndo(`Copied ${added.length} item${added.length===1?'':'s'} to ${where}`, ()=>{
-    const d=dstore(k); d.log=(d.log||[]).filter(x=>added.indexOf(x)<0); touch(k); save(); render();
+    /* Undo the day it landed on, not the day you are looking at now. */
+    const d=data.dates[k]; if(!d) return;
+    d.log=(d.log||[]).filter(x=>added.indexOf(x)<0); touch(k); save(); render();
   });
 }
 function updateEdCalc(){ const el=document.getElementById('edcalc'); if(!el) return;
@@ -5171,7 +5264,7 @@ document.addEventListener('click', e=>{
     if(!isToday()) state.planned=curKey();
     render(); }
   else if(a==='planday'){ state.planned=el.dataset.k; state.tab='lift'; render();
-    showToast('Pick the day you trained — it will be recorded against '+relDayLabel(el.dataset.k).toLowerCase(),'info'); }
+    showToast('Pick the day you trained — it will be recorded against '+dayPhrase(el.dataset.k),'info'); }
   else if(a==='addex'){ addExSheet(el.dataset.k||curKey()); }
   else if(a==='addexdo'){ const k=el.dataset.k||curKey();
     const nm=normName(val('addexn')); if(!nm){ showToast('Give it a name first','err'); return; }
@@ -5336,8 +5429,11 @@ document.addEventListener('click', e=>{
     (s.log=s.log||[]).push(entry); f.used=nowMs(); state.fuelMeal=null; touch(); touchSettings(); save(); closeSheet(); render();
     showToast('Logged '+f.name+' to '+mealName(entry.meal),'good'); checkTargets(); }
   else if(a==='editlog'){ editLogSheet(+el.dataset.i); }
-  else if(a==='copymeal'){ copySheet({meal:el.dataset.m}); }
-  else if(a==='copyentry'){ copySheet({i:+el.dataset.i}); }
+  /* A fresh copy always starts aimed at the day you are looking at; the chips
+     move it from there. Without this reset a destination chosen last week
+     silently survives into the next copy. */
+  else if(a==='copymeal'){ state.copyDest=curKey(); copySheet({meal:el.dataset.m}); }
+  else if(a==='copyentry'){ state.copyDest=curKey(); copySheet({i:+el.dataset.i}); }
   else if(a==='copyinto'){ copyIntoSheet(el.dataset.m); }
   else if(a==='copyfrom'){ doCopy(copyItems({meal:el.dataset.from}), [el.dataset.to]); }
   else if(a==='copypick'){ const on=el.getAttribute('aria-pressed')==='true';
@@ -5350,7 +5446,24 @@ document.addEventListener('click', e=>{
       : 'Pick one or more meals.'; }
   else if(a==='copydo'){
     const dests=[...document.querySelectorAll('[data-act="copypick"][aria-pressed="true"]')].map(b=>b.dataset.m);
-    doCopy(copyItems(state.copySrc), dests); }
+    doCopy(copyItems(state.copySrc), dests, state.copyDest); }
+  /* ---- copying across days ---- */
+  else if(a==='copyday'){ state.copyDest=el.dataset.k; haptic('pick'); copySheet(state.copySrc); }
+  else if(a==='copydaypick'||a==='dayoutpickpick'){ const inp=document.getElementById('copyDate'); if(!inp) return;
+    inp.dataset.mode = (a==='copydaypick') ? 'copy' : 'dayout';
+    try{ inp.showPicker(); }catch(err){ inp.focus(); inp.click(); } }
+  else if(a==='copydaycard'){ dayCopySheet(); }
+  else if(a==='dayout'){ dayOutSheet(); }
+  else if(a==='dayoutpick'){ state.copyDest=el.dataset.k; haptic('pick'); dayOutSheet(); }
+  else if(a==='dayoutdo'){
+    const items=copyItems({all:true}, curKey());
+    if(!items.length){ showToast('Nothing logged on this day','err'); return; }
+    if(state.copyDest===curKey()){ showToast('Pick a different day to copy to','err'); return; }
+    doCopy(items, null, state.copyDest); }
+  else if(a==='dayin'){ const from=el.dataset.k;
+    const items=copyItems({all:true}, from);
+    if(!items.length){ showToast('Nothing logged on that day','err'); return; }
+    doCopy(items, null, curKey()); }
   else if(a==='savelog'){ const i=+el.dataset.i; const s=dstore(); const e=(s.log||[])[i]; if(!e) return;
     e.name=val('edname').trim()||'Food'; e.p=Math.round(+val('edp')||0); e.c=Math.round(+val('edc')||0); e.f=Math.round(+val('edf')||0); e.meal=state.sheetMeal||e.meal||'snacks'; delete e.det;
     touch(); save(); closeSheet(); render(); }
@@ -5553,6 +5666,11 @@ document.addEventListener('click', e=>{
       confirmLabel:'Sign out', onYes:()=>{ sync=syncDefault(); saveSync(); setSyncDot(); closeSheet(); showToast('Cloud sync disconnected'); } }); }
 });
 document.addEventListener('change', e=>{
+  if(e.target && e.target.id==='copyDate'){ let v=e.target.value; if(!v) return;
+    const tk=todayKey(); if(v>tk) v=tk;
+    state.copyDest=v;
+    if(e.target.dataset.mode==='dayout') dayOutSheet(); else copySheet(state.copySrc);
+    return; }
   if(e.target && e.target.id==='dayInput'){ let v=e.target.value; if(!v) return;
     const tk=todayKey(); if(v>tk) v=tk;
     state.planned=null;      /* same rule as the arrows: leaving a date drops the intent */

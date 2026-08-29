@@ -156,14 +156,23 @@ than orphaning it.
 
 ## Repeating meals
 
-Eating the same thing two or three times a day is normal, and re-logging it
-means re-entering the amount. Anything already logged can be copied instead,
-carrying its macros and serving note over exactly:
+Eating the same thing two or three times a day — or the same day two or three
+times a week — is normal, and re-logging it means re-entering the amounts.
+Anything already logged can be copied instead, carrying its macros and serving
+note over exactly:
 
+- **A whole day** — *Copy a day* on the Fuel screen, in both directions: send
+  this day to another date, or pull another day into this one. Every item
+  keeps its own meal.
 - **A whole meal** — the copy button in any meal header. Pick any number of
-  destinations at once, including the same meal again if you ate it twice.
+  destination meals at once, including the same meal again if you ate it twice.
 - **A single item** — the copy button on its row, or from the entry itself.
 - **Into an empty meal** — an empty meal offers to copy an earlier one in.
+
+Every copy names the day it lands on. Nothing is ever replaced — a copy is
+added to whatever is already there, and the sheet tells you first. Future dates
+are deliberately not offered: the rest of the app cannot navigate past today,
+so a copy landing there would be invisible.
 
 Every copy comes with an Undo. Foods you have not saved yet can be searched by
 name against Open Food Facts, but your own saved list always comes first — the
